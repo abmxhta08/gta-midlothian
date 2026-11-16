@@ -102,7 +102,7 @@ export class HUD {
       if (letter) { c.fillStyle = '#000'; c.font = 'bold 9px Inter'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(letter, a, b + 0.5); }
     };
     for (const it of g.pickups.items) if (it.active) blip(it.pos.x, it.pos.z, { health: '#3cff6a', armor: '#3c9bff', cash: '#7cff7c' }[it.kind] || '#ffa63c', 3);
-    if (!g.missions.active) for (const m of g.missions.markers) if (m.cool <= 0) blip(m.pos.x, m.pos.z, '#ffd23f', 7, m.def.letter, true);
+    if (!g.missions.active) for (const m of g.missions.markers) if (m.mesh.visible && m.def.letter) blip(m.pos.x, m.pos.z, m.def.type === 'side' ? '#5ad2ff' : '#ffd23f', 7, m.def.letter, m.def.type !== 'side');
     if (g.missions.dest) blip(g.missions.dest.x, g.missions.dest.z, '#ffd23f', 6, null, true);
     if (g.waypoint) blip(g.waypoint.x, g.waypoint.z, '#c46bff', 5, null, true);
     for (const pl of g.places?.list || []) blip(pl.pos.x, pl.pos.z, '#' + pl.style.color.toString(16).padStart(6, '0'), 5, pl.style.letter);

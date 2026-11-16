@@ -43,6 +43,7 @@ export async function buildWorld(gameScene, map, T, step = async () => {}) {
     const [key, order] = b.key.split('@'), mat = M[key] || ctx.custom[key];
     if (!mat) { console.warn('missing material', key); continue; }
     const o = +order, mesh = new THREE.Mesh(b.build(), mat);
+    mesh.userData.layer = key; mesh.geometry.computeBoundingBox();   // kept for map-integrity checks after the arrays are freed
     mesh.renderOrder = o; mesh.receiveShadow = true; mesh.castShadow = o >= 0; mesh.matrixAutoUpdate = false;
     scene.add(mesh); if (o >= 0) ctx.solids.push(mesh); tris += b.p.length / 9;
     b.p = b.n = b.u = b.c = null;   // drop the JS-side build arrays

@@ -23,7 +23,7 @@ export class Ped {
   sync() { this.h.root.position.set(this.pos.x, this.y, this.pos.z); this.h.root.rotation.y = this.yaw; }
   /** Ray vs vertical capsule. Returns {t, head} or null. */
   rayHit(o, d, maxD) {
-    if (this.state === 'dead' || this.state === 'knocked' || this.inVehicle) return null;
+    if (this.state === 'dead' || this.state === 'knocked' || this.state === 'out' || this.inVehicle) return null;
     const H = 1.75 * this.h.height, r = 0.3, wx = o.x - this.pos.x, wz = o.z - this.pos.z, dd = d.x * d.x + d.z * d.z;
     if (dd < 1e-6) return null;
     const tc = -(wx * d.x + wz * d.z) / dd, cx = wx + d.x * tc, cz = wz + d.z * tc, dist2 = cx * cx + cz * cz;
@@ -35,6 +35,7 @@ export class Ped {
   damage(n, src = null, dir = null) {
     if (this.state === 'dead') return;
     this.health -= n;
+    if (this.nonLethal && this.health <= 0) { this.health = 1; return this.subdue(); }
     if (this.gang && src === 'player') this.game.peds.provoke(this);
     if (this.health <= 0) {
       this.state = 'dead'; this.h.dead = 0.01; this.removeT = settings.reducedViolence ? 10 : 40;
@@ -50,10 +51,14 @@ export class Ped {
     this.game.audio.punch(this.pos);
     if (this.health <= 0) { this.health = 0; this.pendingDeath = src || 'vehicle'; }
   }
+  /** Mission targets: knocked out instead of killed. They sit with hands up until collected. */
+  subdue() { this.subdued = true; this.state = 'hostage'; this.noFlee = true; this.hostile = false; this.aimK = 0; this.h.setWeaponMesh(null); this.h.dead = 0; this.y = 0; this.game.hud.toast('Target subdued'); }
   /** Stun grenade: dazed for `t` seconds, then (civilians) run away. */
-  stun(t) { if (this.state === 'dead' || this.state === 'knocked') return; this.prevState = this.state === 'stunned' ? this.prevState : this.state; this.state = 'stunned'; this.timer = t; this.aimK = 0; }
+  /** Silent stealth takedown from behind: falls unconscious and stays down (not a kill). */
+  takedown() { this.state = 'out'; this.hostile = false; this.aimK = 0; this.h.setWeaponMesh(null); this.h.dead = 0.01; this.h.deathDir = 1; this.speed = 0; this.game.audio?.punch?.(this.pos); }
+  stun(t) { if (this.nonLethal) return this.subdue(); if (this.state === 'dead' || this.state === 'knocked') return; this.prevState = this.state === 'stunned' ? this.prevState : this.state; this.state = 'stunned'; this.timer = t; this.aimK = 0; }
   flee(from, time = 10) {
-    if (this.state === 'dead' || this.state === 'knocked' || this.state === 'stunned' || this.cop || this.state === 'hostile' || this.noFlee) return;
+    if (this.state === 'dead' || this.state === 'knocked' || this.state === 'out' || this.state === 'stunned' || this.cop || this.state === 'hostile' || this.noFlee) return;
     if (this.gang && this.state === 'hang') return;
     this.state = 'flee'; this.timer = time; this.fleeFrom.set(from.x, 0, from.z);
   }
@@ -61,13 +66,15 @@ export class Ped {
     const g = this.game, grid = g.world.grid;
     let speed = 0, opts = {};
     if (this.state === 'dead') { this.removeT -= dt; this.h.animate(dt, 0); return; }
+    if (this.state === 'out') { this.h.animate(dt, 0); this.sync(); return; }
     if (this.state === 'knocked') {
       this.pos.addScaledVector(this.vel, dt); this.vy -= 14 * dt; this.y = Math.max(0, this.y + this.vy * dt);
       this.vel.multiplyScalar(Math.exp(-(this.y > 0 ? 0.5 : 4) * dt));
       const o = grid.push(this.pos.x, this.pos.z, 0.3); if (o.hit) { this.pos.x += o.x; this.pos.z += o.z; this.vel.multiplyScalar(0.3); }
       this.h.animate(dt, 0); this.sync();
       if ((this.timer -= dt) <= 0 && this.y <= 0) {
-        if (this.pendingDeath) { this.state = 'dead'; this.removeT = 40; this.game.onPedKilled(this, this.pendingDeath); }
+        if (this.pendingDeath && this.nonLethal) { this.pendingDeath = null; this.subdue(); }
+        else if (this.pendingDeath) { this.state = 'dead'; this.removeT = 40; this.game.onPedKilled(this, this.pendingDeath); }
         else { this.h.dead = 0; this.flee(this.pos.clone().add(this.vel), 8); }
       }
       return;
@@ -87,7 +94,8 @@ export class Ped {
       const sp = g.peds.nearestSidewalk(this.pos.x, this.pos.z, 40);
       if (sp) { this.path = sp.path; this.s = sp.s; } else { this.state = 'idle'; this.timer = 5; }
     } else if (this.state === 'idle') {
-      if ((this.timer -= dt) <= 0) this.state = 'walk';
+      if (this.provokeGroup && this.pos.distanceTo(g.player.pos) < 16 && !g.zones.inSafeZone(g.player.pos.x, g.player.pos.z)) g.peds.provoke(this);
+      else if ((this.timer -= dt) <= 0) this.state = 'walk';
     } else if (this.state === 'flee') {
       let dx = this.pos.x - this.fleeFrom.x, dz = this.pos.z - this.fleeFrom.z; const d = Math.hypot(dx, dz) || 1;
       dx /= d; dz /= d;
@@ -98,6 +106,12 @@ export class Ped {
     } else if (this.state === 'cop') {
       speed = g.police.copThink(this, dt, opts);
     } else if (this.state === 'hostage') { opts.handsUp = true; }
+    else if (this.state === 'guard') {
+      const gd = this.guard, tgt = gd.toB ? gd.b : gd.a, dx = tgt.x - this.pos.x, dz = tgt.z - this.pos.z, d = Math.hypot(dx, dz);
+      if (gd.wait > 0) { gd.wait -= dt; this.yaw += dt * 0.6 * Math.sin(this.game.time); }
+      else if (d < 0.6) { gd.toB = !gd.toB; gd.wait = 2 + Math.random() * 2; }
+      else { this.turnTo(Math.atan2(dx, dz), dt, 4); this.pos.x += Math.sin(this.yaw) * this.walkSpeed * dt; this.pos.z += Math.cos(this.yaw) * this.walkSpeed * dt; speed = this.walkSpeed; }
+    }
     else if (this.state === 'hang') { if (Math.random() < dt * 0.3) this.yaw += (Math.random() - 0.5) * 1.5; }
     else if (this.state === 'hostile') { speed = g.peds.gangThink(this, dt, opts); }
     else if (this.state === 'calling') { opts.handsUp = false; }
@@ -172,7 +186,7 @@ export class PedManager {
   /** Gang members fight back: everyone in the same crew near `p` turns hostile. */
   provoke(p) {
     if (this.game.zones.inSafeZone(this.game.player.pos.x, this.game.player.pos.z)) return;
-    for (const q of this.list) if (q.gang && q.alive && q.state !== 'knocked' && (q.group === p.group || q.pos.distanceTo(p.pos) < 25)) {
+    for (const q of this.list) if (q.gang && q.alive && q.state !== 'knocked' && q.state !== 'out' && (q.group === p.group || (!q.mission && !p.mission && q.pos.distanceTo(p.pos) < 25))) {
       q.state = 'hostile'; q.hostile = true; q.h.setWeaponMesh(q.weapon); q.shootT = 0.8 + Math.random();
     }
   }
@@ -181,8 +195,16 @@ export class PedManager {
     const g = this.game, P = g.player, tp = P.vehicle ? P.vehicle.pos : P.pos;
     const dx = tp.x - o.pos.x, dz = tp.z - o.pos.z, d = Math.hypot(dx, dz);
     if (d > 90 || g.zones.inSafeZone(tp.x, tp.z)) { o.aimK = 0; if (d > 90) { o.state = 'walk'; o.hostile = false; o.path = null; } return 0; }
-    o.turnTo(Math.atan2(dx, dz), dt, 7);
     let speed = 0; const los = g.police.los(o.pos, tp);
+    // close in; steer around walls (fan out to one side until the way is clear) instead of pushing into them
+    let want = Math.atan2(dx, dz);
+    if (d > 13 || !los) {
+      const grid = g.world.grid, clear = (a) => grid.ray(o.pos.x, o.pos.z, Math.sin(a), Math.cos(a), 2.5) === Infinity;
+      if (o.detourT > 0 && !clear(want)) { o.detourT -= dt; want = o.detourYaw; }
+      else if (!clear(want)) { o.side = o.side || (Math.random() < 0.5 ? 1 : -1); for (let k = 1; k <= 8; k++) { const b = want + o.side * k * 0.35; if (clear(b)) { want = b; break; } const c = want - o.side * k * 0.35; if (clear(c)) { want = c; o.side = -o.side; break; } } o.detourYaw = want; o.detourT = 1.2; }
+      else o.detourT = 0;
+    }
+    o.turnTo(want, dt, 7);
     if (d > 13 || !los) { speed = 4.5; o.pos.x += Math.sin(o.yaw) * speed * dt; o.pos.z += Math.cos(o.yaw) * speed * dt; }
     o.aimK = los && d < 45 ? Math.min(1, (o.aimK || 0) + dt * 3) : Math.max(0, (o.aimK || 0) - dt * 3);
     if (o.aimK > 0.9 && (o.shootT -= dt) <= 0) {

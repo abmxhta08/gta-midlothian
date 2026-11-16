@@ -132,3 +132,5 @@ canvas#c{position:fixed;inset:0;width:100%;height:100%;display:block}
 #overlay .pbtns{margin-top:14px;display:flex;gap:10px;justify-content:center}
 #overlay .pbtns button{background:#ffd54a;border:0;border-radius:4px;padding:8px 18px;font:700 14px Inter;cursor:pointer}
 @media (max-width:1400px){#minimap{width:260px;height:174px}#mmwrap{width:260px}#title h1{font-size:68px}#menu{width:340px}}
+#checklist .meter{width:220px;height:8px;background:#0008;border-radius:4px;overflow:hidden;margin-top:3px}
+#checklist .meter i{display:block;height:100%}

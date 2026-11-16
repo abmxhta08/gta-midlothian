@@ -85,7 +85,7 @@ export class FullMap {
     }
     const blip = (x, z, col, r, letter) => { const [a, b] = this.toScreen(x, z); c.fillStyle = col; c.strokeStyle = '#000'; c.lineWidth = 2; c.beginPath(); c.arc(a, b, r, 0, 7); c.fill(); c.stroke(); if (letter) { c.fillStyle = '#000'; c.font = 'bold 11px Inter'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(letter, a, b + 0.5); } };
     for (const it of g.pickups.items) if (it.active) blip(it.pos.x, it.pos.z, { health: '#3cff6a', armor: '#3c9bff', cash: '#7cff7c' }[it.kind] || '#ffa63c', 4);
-    for (const m of g.missions.markers) if (!g.missions.active) blip(m.pos.x, m.pos.z, '#ffd23f', 9, m.def.letter);
+    for (const m of g.missions.markers) if (!g.missions.active && m.mesh.visible && m.def.letter) blip(m.pos.x, m.pos.z, m.def.type === 'side' ? '#5ad2ff' : '#ffd23f', 9, m.def.letter);
     if (g.missions.dest) blip(g.missions.dest.x, g.missions.dest.z, '#ffd23f', 8);
     if (g.waypoint) blip(g.waypoint.x, g.waypoint.z, '#c46bff', 7);
     for (const v of g.police.cars) if (!v.dead) blip(v.pos.x, v.pos.z, '#ff3030', 5);

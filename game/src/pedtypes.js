@@ -9,6 +9,7 @@ export const PED_TYPES = {
   shopper:  { weight: 16, speed: [1.0, 1.4], bag: true, look: () => ({}) },
   gang:     { weight: 12, group: 3, look: () => ({ top: pick([0x6a1a8a, 0x5a1414]), bottom: 0x1a1a1a, shoe: 0x111111, hairStyle: 0.85, fem: false }) },
   shopkeeper: { weight: 0, look: () => ({ top: 0x2a6a3a, bottom: 0x2b2b2b }) },
+  vip:      { weight: 0, look: () => ({ top: 0x1c1c22, bottom: 0x1c1c22, shoe: 0x0a0a0a, hair: 0x9a9a9a, hairStyle: 0.2, fem: false }) },
 };
 export function pickType(r = Math.random(), allowGang = true) {
   const entries = Object.entries(PED_TYPES).filter(([k, t]) => t.weight > 0 && (allowGang || k !== 'gang'));

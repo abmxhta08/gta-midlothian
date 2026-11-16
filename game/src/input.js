@@ -41,6 +41,7 @@ export class Input {
 
   /** Poll the Gamepad API once per frame (standard mapping). */
   pollGamepad() {
+    if (this.simPad) { this.gamepad = this.simPad; this.padPressed = null; return; }
     const pads = navigator.getGamepads?.() || []; const p = [...pads].find(x => x && x.connected);
     if (!p) { this.gamepad = null; this.padPressed = null; return; }
     const b = (i) => !!p.buttons[i]?.pressed, ax = (i) => Math.abs(p.axes[i] || 0) > 0.15 ? p.axes[i] : 0;
@@ -48,6 +49,7 @@ export class Input {
       back: b(8), start: b(9), ls: b(10), rs: b(11), up: b(12), down: b(13), left: b(14), right: b(15) };
     // map buttons to actions
     const act = { jump: g.x, enter: g.y, sprint: g.a, cover: g.rb, reload: g.b, wheel: g.lb, map: g.back, phone: g.up, radio: g.right, horn: g.ls, camera: g.rs, interact: g.down };
+    if (this.uiCapture) for (const k in act) act[k] = false;   // a menu/phone is open: the pad drives that instead (ui/padnav.js)
     this.padPressed = {}; for (const k in act) { if (act[k] && !this.padPrev[k]) this.padPressed[k] = true; }
     this.padPrev = act; this.padAct = act; this.gamepad = g;
     this.mdx += g.rx * 14; this.mdy += g.ry * 10;

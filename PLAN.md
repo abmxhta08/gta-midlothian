@@ -43,11 +43,13 @@ Browser game (vanilla ES modules + Three.js CDN, no build step, single-player). 
 - [x] Save system v2 with migration
 
 ## Phase 3: missions and story
-- [ ] Data-driven MissionManager: step types, objectives, dialogue, checkpoints/retry, fail conditions, medals, payout, wanted suppression
-- [ ] Port the 4 existing missions to data
-- [ ] Main story (10 missions, 3 allies + villain, ending)
-- [ ] Heist (setup, loud/stealth choice, crew selection, job, getaway)
-- [ ] Side jobs: taxi, delivery, races with AI opponents, bounty targets, tow/repo
+- [x] Data-driven MissionManager: 19 step types, objectives, dialogue/subtitles, checkpoints + retry (mission vehicles restored), fail conditions, medals, payout, wanted suppression
+- [x] Port the 4 existing missions to data (delivery, race, heat, repo became side jobs)
+- [x] Main story: 8 story missions + 2 heist missions = 10, allies Rosa Quill / Tick / Harlan Pryce, villain Victor Graves, ending
+- [x] Heist (setup, loud/stealth choice, crew selection with cuts, job, getaway)
+- [x] Side jobs: taxi, delivery, races with AI opponents, bounty (knock out + drop at police), tow/repo, plus "Heat Wave" and the ambient street-race challenge
+- [x] Stealth: view cones, detection meter, silent takedown from behind (E)
+- [x] tests/missions.test.mjs (34 checks) + TestBot that plays every mission through the real input path
 
 ## Phase 4: UI and polish
 - [ ] Title screen (Continue / New Game with confirm / Settings), loading progress

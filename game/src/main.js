@@ -13,13 +13,14 @@ import { Traffic } from './traffic.js';
 import { Police } from './police.js';
 import { Combat } from './combat.js';
 import { Pickups } from './pickups.js';
-import { Missions } from './missions.js';
+import { MissionManager } from './missions/manager.js';
 import { Vehicle } from './entities/vehicle.js';
 import { MATS } from './entities/carmodels.js';
 import { HUD } from './ui/hud.js';
 import { FullMap } from './ui/fullmap.js';
 import { Menu } from './ui/menu.js';
 import { Phone } from './ui/phone.js';
+import { PadNav } from './ui/padnav.js';
 import { SettingsUI } from './ui/settings.js';
 import { WeaponWheel } from './ui/weaponwheel.js';
 import { Title } from './ui/title.js';
@@ -95,7 +96,7 @@ class Game {
     { const home = this.places.get('safehouse'); if (home) this.spawnPoint = { x: home.pos.x, z: home.pos.z }; }   // you start at your safehouse
     this.garage = new Garage(this);
     this.pickups = new Pickups(this);
-    this.missions = new Missions(this);
+    this.missions = new MissionManager(this);
     this.stunts = new Stunts(this);
     this.collectibles = new Collectibles(this);
     this.ambient = new Ambient(this);
@@ -122,7 +123,7 @@ class Game {
     };
     this.debug = new DebugPanel(this);
     addEventListener('keydown', (e) => { if (e.code === 'F3') { e.preventDefault(); this.debug.toggle(); } });
-    this.title = new Title(this);
+    this.title = new Title(this); this.padnav = new PadNav(this);
     addEventListener('resize', () => { this.camera.aspect = innerWidth / innerHeight; this.camera.updateProjectionMatrix(); this.post.resize(); });
     events.on('settings', () => { this.audio.setVolume(settings.volume); });
     $('loading').style.display = 'none';
@@ -217,6 +218,7 @@ class Game {
     this.spawnPlayer(false, place ? { x: place.pos.x, z: place.pos.z } : null); P.health = 100;
     this.hud.toast(kind === 'busted' ? 'Released from the police substation' : `Discharged from ${place ? this.places.display(place) : 'the hospital'}`);
     events.emit('respawn', { kind });
+    this.missions.afterRespawn();
     writeSave(this);
   }
 
@@ -448,7 +450,7 @@ class Game {
   frame(now, dt, doUpdate) {
     this.frames++;
     this.renderer.info.reset();
-    try { if (doUpdate) this.update(dt); } catch (e) { report(e, 'update'); }
+    try { if (doUpdate) { if (this.botLive) this.botLive.tick(dt); else this.update(dt); } } catch (e) { report(e, 'update'); }
     try { this.input.endFrame(); if (!this.fullmap.open) this.post.render(); } catch (e) { report(e, 'render'); }
     this.perf.frame(now, this.renderer.info.render);
   }
