@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Midlothian</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="src/ui/style.css">
+</head><body>
+<canvas id="c"></canvas>
+
+<div id="hud">
+  <div id="mmwrap"><canvas id="minimap" width="300" height="200"></canvas>
+    <div id="bars"><div class="bar"><i id="hpbar"></i></div><div class="bar armor"><i id="arbar"></i></div></div></div>
+  <div id="topright">
+    <div id="weapon"><span id="wname">Pistol</span> <span id="ammo">12 / 96</span></div>
+    <div id="money">$0</div>
+    <div id="wanted"></div>
+  </div>
+  <div id="help"></div>
+  <div id="objective"></div>
+  <div id="timer"></div>
+  <div id="loc"><div id="locname"></div><div id="locsub"></div></div>
+  <div id="street"></div>
+  <div id="speed"></div>
+  <div id="cross"></div>
+  <div id="toast"></div>
+  <div id="big"><div id="bigt"></div><div id="bigs"></div></div>
+</div>
+
+<canvas id="fullmap"></canvas>
+<div id="maphint">Drag to pan · Scroll to zoom · Click to set waypoint · Right-click to clear · M to close</div>
+
+<div id="overlay"><div class="panel">
+  <h1>MIDLOTHIAN</h1><div class="sub">Press <b>SPACE</b> to play</div>
+  <div class="cols">
+  <table>
+    <tr><td>W A S D</td><td>move / drive</td></tr><tr><td>Mouse</td><td>look</td></tr>
+    <tr><td>Shift</td><td>sprint</td></tr><tr><td>Space</td><td>jump / handbrake</td></tr>
+    <tr><td>Left click</td><td>shoot / punch</td></tr><tr><td>Right click</td><td>aim</td></tr>
+    <tr><td>1-5 / wheel</td><td>switch weapon</td></tr><tr><td>R</td><td>reload</td></tr>
+  </table><table>
+    <tr><td>F or E</td><td>enter / exit / steal car</td></tr><tr><td>H</td><td>horn</td></tr>
+    <tr><td>M</td><td>full map</td></tr><tr><td>T</td><td>time of day</td></tr>
+    <tr><td>G</td><td>graphics quality</td></tr><tr><td>C</td><td>camera distance</td></tr>
+    <tr><td>Yellow markers</td><td>missions</td></tr><tr><td>Esc</td><td>pause</td></tr>
+  </table></div>
+  <div id="qual"></div>
+  <div id="ver" style="margin-top:6px;font-size:11px;opacity:.45">old version? press Cmd+Shift+R</div>
+</div></div>
+<div id="loading"><div>Loading Midlothian…</div><div id="loadstep"></div></div>
+<div id="credit">© OpenStreetMap contributors</div>
+
+<script>
+  // show any startup crash on the loading screen instead of failing silently
+  const showErr = (m) => { if (document.getElementById('loading').style.display === 'none') return; const l = document.getElementById('loadstep'); if (l) { l.style.color = '#ff8080'; l.textContent = 'Error: ' + m; } document.getElementById('loading').style.display = 'flex'; };
+  addEventListener('error', (e) => showErr(`${e.message} (${(e.filename || '').split('/').pop()}:${e.lineno})`));
+  addEventListener('unhandledrejection', (e) => showErr(String(e.reason && e.reason.stack || e.reason).slice(0, 300)));
+</script>
+<script type="importmap">{"imports":{
+ "three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+ "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
+<script type="module" src="src/main.js"></script>
+</body></html>
