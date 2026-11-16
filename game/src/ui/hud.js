@@ -94,10 +94,12 @@ export class HUD {
       c.strokeStyle = g.routeMission ? '#ffd23f' : '#c46bff'; c.lineWidth = 4; c.lineJoin = c.lineCap = 'round'; c.beginPath();
       g.route.forEach((p, i) => { const [a, b] = toScreen(p[0], p[1]); i ? c.lineTo(a, b) : c.moveTo(a, b); }); c.stroke();
     }
+    const drawn = this.blipsDrawn = [];   // what the minimap shows this frame (tests compare it with real targets)
     const blip = (x, z, col, r = 5, letter = null, clampEdge = false) => {
       let [a, b] = toScreen(x, z);
       if (clampEdge) { a = Math.max(8, Math.min(W - 8, a)); b = Math.max(8, Math.min(H - 8, b)); }
       else if (a < -10 || a > W + 10 || b < -10 || b > H + 10) return;
+      drawn.push({ x, z, col, letter });
       c.fillStyle = col; c.strokeStyle = '#000'; c.lineWidth = 1.5; c.beginPath(); c.arc(a, b, r, 0, 7); c.fill(); c.stroke();
       if (letter) { c.fillStyle = '#000'; c.font = 'bold 9px Inter'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(letter, a, b + 0.5); }
     };

@@ -52,11 +52,11 @@ Browser game (vanilla ES modules + Three.js CDN, no build step, single-player). 
 - [x] tests/missions.test.mjs (34 checks) + TestBot that plays every mission through the real input path
 
 ## Phase 4: UI and polish
-- [ ] Title screen (Continue / New Game with confirm / Settings), loading progress
-- [ ] Settings (volume, sensitivity, keybinds, quality, reduced violence, brand mode)
-- [ ] Mission HUD, weapon wheel UI, phone UI
-- [ ] Gamepad support
-- [ ] Layout checks at 1280x720 and 1920x1080
+- [x] Title screen (Continue / New Game with confirm / Settings), loading progress
+- [x] Settings (volume, sensitivity, invert Y, keybinds, quality, reduced violence, brand mode, density), persisted
+- [x] Mission HUD (objective, timer, meters, subtitles, checklist), weapon wheel UI, phone UI
+- [x] Gamepad: play (sticks, triggers, buttons) + menus/phone/pause via D-pad, A, B, Start (ui/padnav.js)
+- [x] Layout checks at 1280x720 and 1920x1080 (tests/ui.test.mjs, 23 checks incl. minimap blips)
 
 ## Phase 5: testing and bug fixing
 - [ ] Test hooks behind `?test=1`
