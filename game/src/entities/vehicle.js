@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { carParts, wheelGeo, MATS, paint, CAR_TYPES } from './carmodels.js';
+import { carParts, MATS, paint, CAR_TYPES, dynamicCar, MISC_MAT } from './carmodels.js';
 import { clamp } from '../util.js';
 
 const TMP = new THREE.Vector3();
@@ -16,13 +16,14 @@ export class Vehicle {
     this.group = new THREE.Group(); this.tilt = new THREE.Group(); this.group.add(this.tilt);
     this.paint = paint(this.police ? 0x0d0d10 : color);
     this.tailMat = MATS.tail.clone(); this.redMat = MATS.red.clone(); this.blueMat = MATS.blue.clone();
-    const matFor = (k) => ({ paint: this.paint, tail: this.tailMat, red: this.redMat, blue: this.blueMat }[k] || MATS[k]);
+    const matFor = (k) => ({ paint: this.paint, tail: this.tailMat, red: this.redMat, blue: this.blueMat, misc: MISC_MAT }[k] || MATS[k]);
+    const dyn = dynamicCar(type);
     this.meshes = [];
-    for (const p of parts) { const m = new THREE.Mesh(p.geo, matFor(p.mat)); m.castShadow = true; m.receiveShadow = true; m.userData.kind = p.mat; this.tilt.add(m); this.meshes.push(m); }
+    for (const [k, geo] of Object.entries(dyn.groups)) { const m = new THREE.Mesh(geo, matFor(k)); m.castShadow = k !== 'head' && k !== 'tail'; m.receiveShadow = true; m.userData.kind = k; this.tilt.add(m); this.meshes.push(m); }
     this.wheels = wheels.map(w => {
       const pivot = new THREE.Group(); pivot.position.set(w.x, w.y, w.z); this.group.add(pivot);
-      const spin = new THREE.Group(); pivot.add(spin); const g = wheelGeo(w.r);
-      const tire = new THREE.Mesh(g.tire, MATS.tire), rim = new THREE.Mesh(g.rim, MATS.rim); tire.castShadow = true; spin.add(tire, rim);
+      const spin = new THREE.Group(); pivot.add(spin);
+      const wm = new THREE.Mesh(dyn.wheel, MISC_MAT); wm.castShadow = true; spin.add(wm);
       return { pivot, spin, front: w.front, x: w.x, z: w.z };
     });
     this.wheelRot = 0;

@@ -1,6 +1,18 @@
 [build]
   publish = "game"
 
+# ES modules are loaded without a bundler, so make browsers revalidate code on every load
+# (cheap 304s via ETag) instead of running a stale mix of old and new modules.
+[[headers]]
+  for = "/src/*"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-cache"
+
 [[headers]]
   for = "/data/*"
   [headers.values]

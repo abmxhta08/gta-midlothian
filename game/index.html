@@ -1,6 +1,8 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Midlothian</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23ffd23f'/%3E%3Cpath d='M3 12V4l2.5 4L8 4l2.5 4L13 4v8' stroke='%23000' stroke-width='1.6' fill='none'/%3E%3C/svg%3E">
+
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="src/ui/style.css">
@@ -46,17 +48,22 @@
   <div id="qual"></div>
   <div id="ver" style="margin-top:6px;font-size:11px;opacity:.45">old version? press Cmd+Shift+R</div>
 </div></div>
-<div id="loading"><div>Loading Midlothian…</div><div id="loadstep"></div></div>
+<div id="loading"><div>Loading Midlothian…</div><div id="loadbar"><i></i></div><div id="loadstep"></div></div>
 <div id="credit">© OpenStreetMap contributors</div>
+<div id="debug"></div>
+<div id="errbar"></div>
+<div id="fatal"><div class="box"><h2>Midlothian hit an error</h2><div class="msg"></div><pre class="stack"></pre>
+  <div class="hint">Try a hard refresh (Cmd+Shift+R). If it keeps happening, send this message.</div><button onclick="location.reload()">Reload</button></div></div>
 
 <script>
-  // show any startup crash on the loading screen instead of failing silently
-  const showErr = (m) => { if (document.getElementById('loading').style.display === 'none') return; const l = document.getElementById('loadstep'); if (l) { l.style.color = '#ff8080'; l.textContent = 'Error: ' + m; } document.getElementById('loading').style.display = 'flex'; };
-  addEventListener('error', (e) => showErr(`${e.message} (${(e.filename || '').split('/').pop()}:${e.lineno})`));
-  addEventListener('unhandledrejection', (e) => showErr(String(e.reason && e.reason.stack || e.reason).slice(0, 300)));
+  // Early safety net: catches errors before main.js has loaded (bad import, syntax error, CDN down).
+  window.__fatal = (m, s) => { const f = document.getElementById('fatal'); if (!f || (window.__game && window.__game.ready)) return; f.querySelector('.msg').textContent = m; f.querySelector('.stack').textContent = s || ''; f.classList.add('show'); };
+  addEventListener('error', (e) => window.__fatal(`${e.message || 'Script failed to load'} (${(e.filename || (e.target && e.target.src) || '').split('/').pop()}:${e.lineno || '?'})`, e.error && e.error.stack), true);
+  addEventListener('unhandledrejection', (e) => window.__fatal(String(e.reason && e.reason.message || e.reason), e.reason && e.reason.stack));
+  setTimeout(() => { if (!window.__game) window.__fatal('The game code did not start within 45 seconds.', 'Check your connection (three.js loads from cdn.jsdelivr.net) and hard-refresh.'); }, 45000);
 </script>
 <script type="importmap">{"imports":{
  "three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
-<script type="module" src="src/main.js"></script>
+<script type="module" src="src/main.js" onerror="window.__fatal('Could not load src/main.js')"></script>
 </body></html>

@@ -109,3 +109,24 @@ export function instancedCar(type) {
   const res = { geo: mergeGeometries(geos), mats: PARKED_MAT };
   instCache.set(type, res); return res;
 }
+
+/** Shared, merged geometry for drivable cars: one geometry per material class per type (cached), so each
+ *  car is ~9 draw calls instead of ~24 and cars of the same type share GPU buffers. */
+export const MISC_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.35 });
+const OWN = new Set(['paint', 'glass', 'head', 'tail', 'red', 'blue']);
+const dynCache = new Map();
+export function dynamicCar(type) {
+  if (dynCache.has(type)) return dynCache.get(type);
+  const { parts, wheels } = carParts(type), byKey = new Map();
+  const strip = (g) => { g = g.index ? g.toNonIndexed() : g.clone(); for (const a of Object.keys(g.attributes)) if (a !== 'position' && a !== 'normal') g.deleteAttribute(a); return g; };
+  const colorize = (g, c) => { g = strip(g); const n = g.attributes.position.count, arr = new Float32Array(n * 3); for (let i = 0; i < n; i++) arr.set(c, i * 3); g.setAttribute('color', new THREE.BufferAttribute(arr, 3)); return g; };
+  for (const p of parts) {
+    const k = OWN.has(p.mat) ? p.mat : 'misc';
+    if (!byKey.has(k)) byKey.set(k, []);
+    byKey.get(k).push(k === 'misc' ? colorize(p.geo, PART_COL[p.mat]) : strip(p.geo));
+  }
+  const groups = {}; for (const [k, l] of byKey) groups[k] = mergeGeometries(l);
+  const r = wheels[0].r, wg = wheelGeo(r, 18);
+  const wheel = mergeGeometries([colorize(wg.tire, PART_COL.tire), colorize(wg.rim, PART_COL.rim)]);
+  const res = { groups, wheel }; dynCache.set(type, res); return res;
+}

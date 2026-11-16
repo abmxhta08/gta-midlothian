@@ -7,6 +7,8 @@ import { buildRoads } from './roads.js';
 import { buildBuildings } from './buildings.js';
 import { buildProps } from './props.js';
 
+function freeArray() { this.array = null; }
+
 export async function buildWorld(scene, map, T, step = async () => {}) {
   const M = makeMaterials(T);
   M.swim = Object.assign(new THREE.MeshStandardMaterial({ color: 0x48b4dc, roughness: 0.04, metalness: 0.1, normalMap: T.waterNormal }), { depthTest: false, depthWrite: false });
@@ -40,8 +42,10 @@ export async function buildWorld(scene, map, T, step = async () => {}) {
     const o = +order, mesh = new THREE.Mesh(b.build(), mat);
     mesh.renderOrder = o; mesh.receiveShadow = true; mesh.castShadow = o >= 0; mesh.matrixAutoUpdate = false;
     scene.add(mesh); if (o >= 0) ctx.solids.push(mesh); tris += b.p.length / 9;
+    b.p = b.n = b.u = b.c = null;   // drop the JS-side build arrays
+    for (const a of Object.values(mesh.geometry.attributes)) a.onUpload(freeArray);   // and the typed arrays once on the GPU
   }
-  ctx.tris = tris;
+  ctx.tris = tris; chunks.map.clear();
   ctx.nightUpdate = (night, t) => {
     M.nightUpdate(night, t);
     for (const m of ctx.signMats) m.emissiveIntensity = 0.12 + night * 1.3;

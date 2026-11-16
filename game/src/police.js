@@ -2,25 +2,34 @@ import * as THREE from 'three';
 import { Vehicle } from './entities/vehicle.js';
 import { Ped } from './peds.js';
 import { along, shortestAngle, clamp, cumLen } from './util.js';
+import { WitnessCalls } from './witness.js';
 
 /** Wanted level, pursuit cars, officers on foot, busted/evade logic. */
 export class Police {
   constructor(game) {
     this.game = game; this.wanted = 0; this.heat = 0; this.unseen = 0; this.cars = []; this.officers = []; this.spawnT = 0; this.searching = false; this.arrest = 0;
+    this.calls = new WitnessCalls(game); this.lastKnown = null;
   }
   setWanted(n) {
     n = clamp(Math.round(n), 0, 5);
     if (n > this.wanted) { this.unseen = 0; this.game.hud.toast(n >= 3 ? 'Police are closing in!' : 'Wanted by the police'); }
     this.wanted = n; this.heat = n;
-    if (n === 0) this.searching = false;
+    if (n === 0) { this.searching = false; this.calls.clear(); this.lastKnown = null; }
   }
-  crime(kind, pos) {
+  /** A crime happened. It only counts if witnessed (see witness.js). */
+  crime(kind, pos, victim = null) {
+    if (this.wanted > 0 && kind === 'gunfire') { this.unseen = Math.min(this.unseen, 2); return; }   // already wanted: gunfire just gives away your position
+    if (!this.calls.report(kind, pos, victim)) return;
+    this.applyCrime(kind, pos, false);
+  }
+  applyCrime(kind, pos, viaCall) {
+    if (this.game.zones?.inSafeZone(pos.x, pos.z)) return;   // no wanted level can start in a school safe zone
+    if (viaCall) this.game.hud.toast('A witness called the police');
+    this.lastKnown = pos.clone(); this.lastKnownT = 0;
     const w = this.wanted;
-    const copNear = this.cars.some(c => c.pos.distanceTo(pos) < 90) || this.officers.some(o => o.pos.distanceTo(pos) < 70);
-    if (kind === 'gunfire') { if (w === 0 && (copNear || Math.random() < 0.35)) this.setWanted(1); }
-    else if (kind === 'minor') { if (w === 0 && copNear) this.setWanted(1); }
-    else if (kind === 'theft') { if (copNear || Math.random() < 0.3) this.setWanted(Math.max(w, 1)); }
-    else if (kind === 'assault') this.setWanted(Math.max(w, 1) + (copNear && w < 2 ? 1 : 0));
+    if (kind === 'gunfire' || kind === 'minor') { if (w === 0) this.setWanted(1); }
+    else if (kind === 'theft') this.setWanted(Math.max(w, 1));
+    else if (kind === 'assault') this.setWanted(Math.max(w, 1) + (w < 2 && !viaCall ? 1 : 0));
     else if (kind === 'kill') this.setWanted(Math.max(2, w + (w < 3 ? 1 : 0.34)));
     else if (kind === 'copkill') this.setWanted(Math.max(3, w + 1));
     else if (kind === 'copcar') this.setWanted(Math.max(w, 2));
@@ -28,7 +37,9 @@ export class Police {
     if (this.wanted > 0) this.unseen = 0;
   }
   spawnCar() {
-    const g = this.game, pp = g.focus, edges = g.traffic.edges;
+    const g = this.game, pp = g.focus;
+    const edges = g.traffic.edges.filter(e => e.pts.some((p, i) => i % 3 === 0 && Math.abs(p[0] - pp.x) < 260 && Math.abs(p[1] - pp.z) < 260));
+    if (!edges.length) return null;
     for (let t = 0; t < 30; t++) {
       const e = edges[Math.floor(Math.random() * edges.length)], s = Math.random() * e.len, p = along(e.pts, e.D, s), d = Math.hypot(p.x - pp.x, p.z - pp.z);
       if (d < 110 || d > 240) continue;
@@ -39,6 +50,7 @@ export class Police {
   }
   update(dt) {
     const g = this.game, P = g.player, tp = P.vehicle ? P.vehicle.pos : P.pos;
+    this.calls.update(dt, (k, p, via) => this.applyCrime(k, p, via));
     // pursuit units
     const desired = this.wanted ? Math.min(6, this.wanted + 1) : 0;
     this.spawnT -= dt;

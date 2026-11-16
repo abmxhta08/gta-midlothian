@@ -4,7 +4,8 @@ import { mulberry32, pip, bbox, rgb, along, hash, fbm } from '../util.js';
 import { instancedCar, PAINTS, CAR_TYPES } from '../entities/carmodels.js';
 
 const rnd = mulberry32(4242);
-const TC = 200;
+const TC = 400;   // instancing cell size for props: bigger cells = fewer draw calls
+const TREE_C = 260, TREE_LOD = 240;   // trees use smaller cells so the detailed/cheap swap stays close to the player
 const paintGeo = (g, fn) => {
   const p = g.attributes.position, c = new Float32Array(p.count * 3);
   for (let i = 0; i < p.count; i++) { const v = fn(p.getX(i), p.getY(i), p.getZ(i)); c[i * 3] = v[0]; c[i * 3 + 1] = v[1]; c[i * 3 + 2] = v[2]; }
@@ -69,7 +70,7 @@ export function buildProps(ctx) {
   const cells = new Map();
   const addTree = (x, z, kind = -1, s = 0.8 + rnd() * 0.55) => {
     const v = kind >= 0 ? kind : Math.floor(rnd() * 6);
-    const k = v * 1e6 + Math.floor(x / TC) * 1000 + Math.floor(z / TC);
+    const k = v * 1e6 + Math.floor(x / TREE_C) * 1000 + Math.floor(z / TREE_C);
     let l = cells.get(k); if (!l) { l = { v, list: [] }; cells.set(k, l); } l.list.push(x, z, s);
     if (v !== 6) grid.addCircle(x, z, 0.35 * s, 2);
   };
@@ -111,7 +112,7 @@ export function buildProps(ctx) {
   }
   ctx.treeCount = nTrees;
   ctx.updateLOD = (cam) => {
-    for (const t of ctx.treeLOD) { const near = Math.hypot(t.x - cam.x, t.z - cam.z) < 230; t.hi.visible = near; t.lo.visible = !near; }
+    for (const t of ctx.treeLOD) { const near = Math.hypot(t.x - cam.x, t.z - cam.z) < TREE_LOD; t.hi.visible = near; t.lo.visible = !near; }
   };
 
   // ---------- bushes ----------
@@ -177,7 +178,7 @@ export function buildProps(ctx) {
     const pc = { x: sp.x, z: sp.z, heading: sp.heading, type, color: PAINTS[Math.floor(rnd() * PAINTS.length)], active: true };
     const hl = (dims.top[dims.top.length - 1][0] - dims.top[0][0]) / 2;
     pc.seg = grid.addBox(sp.x, sp.z, hl, dims.W / 2, Math.atan2(Math.cos(sp.heading), Math.sin(sp.heading)), 4);
-    const bk = type + '|' + Math.floor(sp.x / 320) + ',' + Math.floor(sp.z / 320);
+    const bk = type + '|' + Math.floor(sp.x / 450) + ',' + Math.floor(sp.z / 450);
     if (!byType.has(bk)) byType.set(bk, []); byType.get(bk).push(pc); ctx.parked.push(pc);
   }
   for (const [bk, list] of byType) {

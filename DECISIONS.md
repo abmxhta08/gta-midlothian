@@ -1,0 +1,10 @@
+# DECISIONS
+
+Judgment calls made without asking, newest at the bottom.
+
+1. **Playwright browsers.** Disk had 4.5 GB free and the user previously ran out of space for Unity. Chromium tests use the installed Google Chrome (`channel: 'chrome'`) instead of downloading Playwright's Chromium; only Firefox and WebKit are downloaded (~180 MB total). Tests live in `tests/` with their own `package.json`; the game itself still has no build step or install.
+2. **Git identity.** Commits use the repo owner's name/email locally plus the `Co-Authored-By` trailer.
+3. **Start-screen bug.** Could not reproduce in Chrome, Firefox or WebKit with real clicks/Space/Enter, with pointer lock allowed or denied (18/18 pass). Most likely cause on the user's machine: an exception inside the frame loop. three.js's `setAnimationLoop` stops rescheduling after a throw, which freezes the first frame (help box + controls visible). Fix: every frame is wrapped in try/catch and errors show a banner; startup errors show a full-screen overlay; stale code is prevented by a no-store dev server, `Cache-Control: no-cache` on Netlify and a visible build stamp. The only real failure found was a missing favicon (404).
+4. **Witness rule applies to all civilian crimes**, not only gunfire: a cop with line of sight (90 m) reacts at once; a pedestrian with line of sight (45 m) calls after 6 s unless knocked down first. Crimes against police always count. Gang members never call the police.
+5. **Performance budget.** Target 60 FPS on Medium at 1280x720, hard floor 50 in the automated test (headless timing is noisy). Fixes: humans are one skinned mesh each (was ~20 meshes), drivable cars share merged geometry (~9 draws, was ~24), bigger instancing cells for props, sky reflection map only rebuilt on large lighting changes (removed periodic frame spikes), CPU-side world geometry freed after GPU upload.
+6. **Quality tiers redefined.** 4x MSAA on the half-float target cost ~40% FPS. Low = no post; Medium = bloom + FXAA + 2048 shadows (default); High = bloom + 2x MSAA + 4096 shadows; Ultra = 4x MSAA + ambient occlusion (AO re-renders the scene, so Ultra is for strong GPUs).

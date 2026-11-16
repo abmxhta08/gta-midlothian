@@ -70,7 +70,10 @@ export function createSky(scene, renderer, T) {
     hemiEnv.material.color.setHex(0x0b0e0a).lerp(new THREE.Color(0x46523b), day);
     renderer.toneMappingExposure = 0.66 - 0.04 * day;
     // regenerate environment
-    const old = envRT; envRT = pmrem.fromScene(envScene, 0, 0.1, 200); scene.environment = envRT.texture; old?.dispose();
+    // the reflection map is expensive to rebuild (a frame spike), so only redo it when the light changed noticeably
+    if (!envRT || Math.abs(L.envDay - day) > 0.06 || Math.abs((L.envHour ?? -9) - L.hour) > 1.5) {
+      const old = envRT; envRT = pmrem.fromScene(envScene, 0, 0.1, 200); scene.environment = envRT.texture; old?.dispose(); L.envDay = day; L.envHour = L.hour;
+    }
     scene.environmentIntensity = 0.35 + 0.65 * day;
   };
   L.update = (focus, camera, dt) => {

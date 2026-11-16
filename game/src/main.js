@@ -19,16 +19,26 @@ import { MATS } from './entities/carmodels.js';
 import { HUD } from './ui/hud.js';
 import { FullMap } from './ui/fullmap.js';
 import { clamp, shortestAngle, cumLen } from './util.js';
+import { installErrorHandling, report } from './ui/errors.js';
+import { Perf, DebugPanel } from './ui/debug.js';
+import { installTestHooks } from './testhooks.js';
 
 const params = new URLSearchParams(location.search);
 const $ = (id) => document.getElementById(id);
-const step = async (s) => { $('loadstep').textContent = s; await new Promise(r => setTimeout(r, 0)); };
+const STEPS = ['Downloading map', 'Painting textures', 'Laying ground', 'Paving roads', 'Raising buildings', 'Planting trees', 'Building meshes', 'Lighting the sky', 'Spawning people'];
+const step = async (s) => {
+  $('loadstep').textContent = s;
+  const i = STEPS.indexOf(s); if (i >= 0) $('loadbar').firstElementChild.style.width = `${Math.round((i + 1) / (STEPS.length + 1) * 100)}%`;
+  await new Promise(r => setTimeout(r, 0));
+};
 const SENS = 0.0022;
-const BUILD = 'v6-space-start';
+const BUILD = 'p1-2026-11-16';
 document.getElementById('ver').textContent = `build ${BUILD}`;
 
 class Game {
   async init() {
+    this.BUILD = BUILD; this.PedClass = Ped;
+    if (params.get('test') === '1' && params.has('crash')) throw new Error('Test crash during startup');
     await step('Downloading map');
     this.data = await (await fetch('data/midlothian.json')).json();
     this.map = prepareData(this.data);
@@ -36,6 +46,8 @@ class Game {
     this.settings = { density: 1 };
     const canvas = $('c');
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', preserveDrawingBuffer: params.has('steps') });
+    this.renderer.info.autoReset = false;   // count draw calls across all post-processing passes per frame
+    this.perf = new Perf();
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(65, innerWidth / innerHeight, 0.25, 2500);
     await step('Painting textures');
@@ -73,17 +85,26 @@ class Game {
       this.lockedAt = 0;
     };
     // Space starts / resumes the game and hides the controls screen
-    const start = () => { $('overlay').style.display = 'none'; this.paused = false; this.audio.init(); this.input.lock(); };
+    // hide first, then the things that can fail (audio, pointer lock) each in their own try/catch
+    const start = () => {
+      $('overlay').style.display = 'none'; this.paused = false;
+      try { this.audio.init(); } catch (e) { report(e, 'audio init'); }
+      try { this.input.lock(); } catch (e) { /* lock denied: drag-to-look still works */ }
+    };
     addEventListener('keydown', (e) => {
       if ((e.code === 'Space' || e.code === 'Enter') && getComputedStyle($('overlay')).display !== 'none' && !e.repeat) {
         e.preventDefault(); this.input.pressedSet.delete(e.code); this.input.keys.delete(e.code); start();
       }
     }, true);
     $('overlay').addEventListener('click', start);
+    this.debug = new DebugPanel(this);
+    addEventListener('keydown', (e) => { if (e.code === 'F3') { e.preventDefault(); this.debug.toggle(); } });
     console.log('Midlothian build', BUILD);
     addEventListener('resize', () => { this.camera.aspect = innerWidth / innerHeight; this.camera.updateProjectionMatrix(); this.post.resize(); });
     $('qual').textContent = `Graphics: ${QUALITY[this.post.level]} (G to change)`;
     $('loading').style.display = 'none';
+    this.ready = true; this.frames = 0;
+    $('loadbar').firstElementChild.style.width = '100%';
     console.log(`ready: ${this.data.buildings.length} buildings, ${this.world.treeCount} trees, ${this.world.parked.length} parked cars, ${this.world.tris | 0} tris`);
   }
   persist() { try { localStorage.setItem('midlothian-save', JSON.stringify({ ...this.save, money: this.player.money, quality: this.post.level, hour: this.hour })); } catch (e) { /* private mode */ } }
@@ -107,9 +128,9 @@ class Game {
     if (first) this.hud.help('Welcome to <b>Midlothian</b>.<br>Press <b>F</b> to get in the car, <b>M</b> for the map. Yellow markers are <b>missions</b>.', 9);
   }
   removeVehicle(v) { const i = this.vehicles.indexOf(v); if (i >= 0) this.vehicles.splice(i, 1); if (v !== this.player.vehicle) v.dispose(); }
-  crime(kind, pos) { this.police.crime(kind, pos); }
+  crime(kind, pos, victim = null) { this.police.crime(kind, pos, victim); }
   onPedKilled(p, src) {
-    if (src === 'player') { this.crime(p.cop ? 'copkill' : 'kill', p.pos); if (!p.cop && Math.random() < 0.5) this.pickups.cash(p.pos.x + 0.6, p.pos.z, 10 + Math.floor(Math.random() * 60)); this.hud.hit(); }
+    if (src === 'player') { this.crime(p.cop ? 'copkill' : 'kill', p.pos, p); if (!p.cop && Math.random() < 0.5) this.pickups.cash(p.pos.x + 0.6, p.pos.z, 10 + Math.floor(Math.random() * 60)); this.hud.hit(); }
     this.peds.panic(p.pos.x, p.pos.z, 40, p.pos);
   }
   onVehicleImpact(v, imp) { if (v === this.player.vehicle) this.shake = Math.max(this.shake, Math.min(0.6, imp / 30)); }
@@ -247,6 +268,7 @@ class Game {
 
   // ---------- main update ----------
   update(dt) {
+    if (this._testThrow) { this._testThrow = false; throw new Error('Test exception from update()'); }
     const inp = this.input, P = this.player;
     this.time += dt;
     if (inp.pressed('KeyM')) {
@@ -316,12 +338,23 @@ class Game {
     this.sky.update(this.focus, this.camera, dt);
     this.world.updateLOD(this.camera.position);
     this.hud.update(dt);
+    this.debug.update(dt);
+  }
+  /** One frame: guarded so an exception is reported instead of stopping three.js's animation loop. */
+  frame(now, dt, doUpdate) {
+    this.frames++;
+    this.renderer.info.reset();
+    try { if (doUpdate) this.update(dt); } catch (e) { report(e, 'update'); }
+    try { this.input.endFrame(); if (!this.fullmap.open) this.post.render(); } catch (e) { report(e, 'render'); }
+    this.perf.frame(now, this.renderer.info.render);
   }
 }
 
 const game = new Game();
 window.__game = game;
-await game.init();
+installErrorHandling(game);
+try { await game.init(); } catch (e) { report(e, 'startup'); throw e; }
+if (params.get('test') === '1') installTestHooks(game);
 
 if (params.has('steps')) {
   // Deterministic scripted run for automated testing.
@@ -363,9 +396,7 @@ if (params.has('steps')) {
   let last = performance.now();
   game.renderer.setAnimationLoop((now) => {
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
-    if (!game.paused || params.has('nopause')) game.update(dt);
-    game.input.endFrame();
-    if (!game.fullmap.open) game.post.render();
+    game.frame(now, dt, !game.paused || params.has('nopause'));
   });
   $('overlay').style.display = 'flex';
   if (params.has('clicktest')) {   // automated check that clicking the start screen gets you into the game

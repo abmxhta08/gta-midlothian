@@ -164,7 +164,7 @@ export class PedManager {
       const d = Math.hypot(p.pos.x - pp.x, p.pos.z - pp.z);
       if ((d > 180 && !p.keep) || (p.state === 'dead' && p.removeT <= 0) || p.remove) { p.dispose(); this.list.splice(i, 1); continue; }
       if (d < 140 || p.cop) p.update(dt); else p.h.root.visible = false;
-      if (d < 140) p.h.root.visible = true;
+      if (d < 140) { p.h.root.visible = true; if (p.h.mesh) p.h.mesh.castShadow = d < 45; }
     }
     // vehicles vs peds
     for (const v of g.vehicles) {
@@ -174,7 +174,7 @@ export class PedManager {
         if (Math.abs(p.pos.x - v.pos.x) > 5 || Math.abs(p.pos.z - v.pos.z) > 5) continue;
         if (v.contains(p.pos.x, p.pos.z, 0.35)) {
           p.knock(v.vx * 0.9, v.vz * 0.9, sp * 6.5, v === g.player.vehicle ? 'player' : 'vehicle');
-          if (v === g.player.vehicle) { g.crime(sp > 8 ? 'assault' : 'minor', p.pos); }
+          if (v === g.player.vehicle) { g.crime(sp > 8 ? 'assault' : 'minor', p.pos, p); }
           v.vx *= 0.92; v.vz *= 0.92;
           this.panic(p.pos.x, p.pos.z, 25, v.pos);
         }
