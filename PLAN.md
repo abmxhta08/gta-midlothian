@@ -27,20 +27,20 @@ Browser game (vanilla ES modules + Three.js CDN, no build step, single-player). 
 - [x] FPS per quality level measured and logged; fix obvious hotspots
 
 ## Phase 2: GTA core feel
-- [ ] Event bus, config folder (safe zones, brand mode, settings), data folder (weapons, vehicles)
-- [ ] School safe zones (weapons holster, no hostiles/police/wanted)
-- [ ] Reduced violence setting (default ON)
-- [ ] BRAND_MODE real/parody
-- [ ] Sprint stamina, vault, cover (peek, blind fire), player ragdoll, water handling
-- [ ] Weapon wheel (hold Q, slow-mo), bat, stun grenade, sniper with scope + sway, per-weapon stats data file
-- [ ] Vehicles: bus, van, taxi, muscle, compact, motorcycle, bicycle with handling table; carjack reactions; flip recovery; radio (3 synth stations)
-- [ ] Wanted upgrades: last known position search, roadblocks + spike strips (3+), tactical units (4+), helicopter with spotlight (5)
-- [ ] Weather (clear/rain/fog) affecting grip + visibility
-- [ ] Ped types: jogger, shopper, gang member, shopkeeper; ambient events (bag snatch, stranded driver, street race challenge)
-- [ ] Shops (clothes, snacks, ammo), gas station repair, paint shop (clears stars), safehouse, hospital + police station respawns
-- [ ] Stunt jumps, 20 hidden collectibles
-- [ ] Phone UI (contacts, map, missions, settings)
-- [ ] Save system v2 with migration
+- [x] Event bus, config folder (safe zones, brand mode, settings), data folder (weapons, vehicles)
+- [x] School safe zones (weapons holster, no hostiles/police/wanted)
+- [x] Reduced violence setting (default ON)
+- [x] BRAND_MODE real/parody
+- [x] Sprint stamina, vault, cover (peek, blind fire), player ragdoll, water handling
+- [x] Weapon wheel (hold Q, slow-mo), bat, stun grenade, sniper with scope + sway, per-weapon stats data file
+- [x] Vehicles: bus, van, taxi, muscle, compact, motorcycle, bicycle with handling table; carjack reactions; flip recovery; radio (3 synth stations)
+- [x] Wanted upgrades: last known position search, roadblocks + spike strips (3+), tactical units (4+), helicopter with spotlight (5)
+- [x] Weather (clear/rain/fog) affecting grip + visibility
+- [x] Ped types: jogger, shopper, gang member, shopkeeper; ambient events (bag snatch, stranded driver, street race challenge)
+- [x] Shops (clothes, snacks, ammo), gas station repair, paint shop (clears stars), safehouse, hospital + police station respawns
+- [x] Stunt jumps, 20 hidden collectibles
+- [x] Phone UI (contacts, map, missions, settings)
+- [x] Save system v2 with migration
 
 ## Phase 3: missions and story
 - [ ] Data-driven MissionManager: step types, objectives, dialogue, checkpoints/retry, fail conditions, medals, payout, wanted suppression

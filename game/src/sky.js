@@ -4,7 +4,7 @@ import { smooth, clamp } from './util.js';
 
 const DEG = Math.PI / 180;
 const FOG_DAY = new THREE.Color(0xa9c4de), FOG_DUSK = new THREE.Color(0xe6a27a), FOG_NIGHT = new THREE.Color(0x0a0f18);
-const SUN_NOON = new THREE.Color(0xfff1dc), SUN_LOW = new THREE.Color(0xff9a4d);
+const SUN_NOON = new THREE.Color(0xfff1dc), SUN_LOW = new THREE.Color(0xff9a4d), GREY = new THREE.Color(0x9aa2aa);
 
 /** Sky, sun (shadowed), hemisphere/moon fill, fog, clouds, stars and a sky-derived environment map. */
 export function createSky(scene, renderer, T) {
@@ -75,6 +75,7 @@ export function createSky(scene, renderer, T) {
       const old = envRT; envRT = pmrem.fromScene(envScene, 0, 0.1, 200); scene.environment = envRT.texture; old?.dispose(); L.envDay = day; L.envHour = L.hour;
     }
     scene.environmentIntensity = 0.35 + 0.65 * day;
+    L.baseSun = sun.intensity; L.baseHemi = hemi.intensity; L.baseFog = scene.fog.color.clone(); L.baseTurb = U.turbidity.value; L.baseStars = stars.visible;
   };
   L.update = (focus, camera, dt) => {
     const sn = L.texel || 0.1, tx = Math.round(focus.x / sn) * sn, tz = Math.round(focus.z / sn) * sn;
@@ -83,6 +84,11 @@ export function createSky(scene, renderer, T) {
     sun.position.set(tx + d.x * 450, d.y * 450, tz + d.z * 450);
     sky.position.copy(camera.position); stars.position.copy(camera.position);
     clouds.position.x = camera.position.x; clouds.position.z = camera.position.z; clouds.rotation.y += dt * 0.002;
+    // weather overcast (0..1) darkens the sun, greys the fog and hazes the sky
+    const oc = L.overcast || 0;
+    sun.intensity = L.baseSun * (1 - 0.82 * oc); hemi.intensity = L.baseHemi * (1 - 0.15 * oc);
+    scene.fog.color.copy(L.baseFog).lerp(GREY.clone().multiplyScalar(0.25 + 0.75 * L.day), oc * 0.75);
+    U.turbidity.value = L.baseTurb + 14 * oc; stars.visible = L.baseStars && oc < 0.4;
   };
   L.setTime(L.hour);
   return L;

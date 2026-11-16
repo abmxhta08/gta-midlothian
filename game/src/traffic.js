@@ -1,10 +1,10 @@
 import * as THREE from 'three';
 import { Vehicle } from './entities/vehicle.js';
 import { PAINTS } from './entities/carmodels.js';
+import { VEHICLES, randomTrafficType } from './data/vehicles.js';
 import { along, shortestAngle, clamp } from './util.js';
 import { SPEED } from './mapdata.js';
 
-const TYPES = ['sedan', 'sedan', 'sedan', 'suv', 'suv', 'hatch', 'pickup'];
 
 /** Kinematic lane-following traffic on the drive graph. */
 export class Traffic {
@@ -36,7 +36,8 @@ export class Traffic {
       const vis = ((p.x - cam.position.x) * fwd.x + (p.z - cam.position.z) * fwd.z) / d;
       if (vis > 0.5 && d < 160) continue;
       if (this.list.some(c => c.ai && c.ai.edge === e && Math.abs(c.ai.s - s) < 14)) continue;
-      const v = new Vehicle(this.game, TYPES[Math.floor(Math.random() * TYPES.length)], PAINTS[Math.floor(Math.random() * PAINTS.length)]);
+      let type = randomTrafficType(); if (type === 'bus' && e.road.w < 9) type = 'sedan';
+      const v = new Vehicle(this.game, type, VEHICLES[type].color ?? PAINTS[Math.floor(Math.random() * PAINTS.length)]);
       v.mode = 'kinematic'; v.driver = 'npc';
       v.ai = { edge: e, s, lane: e.laneOffsets[Math.floor(Math.random() * e.laneOffsets.length)], v: SPEED[e.road.type] * 0.6, aggro: 0.85 + Math.random() * 0.3, wait: 0, stopped: null, panic: 0, crashT: 0, honkT: 0 };
       this.place(v, true);

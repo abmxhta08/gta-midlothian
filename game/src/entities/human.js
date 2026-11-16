@@ -138,6 +138,8 @@ export class Human {
     const swing = Math.sin(p) * amp * (0.9 + run * 0.4);
     b.armL.sh.rotation.set(swing, 0, 0.08 + breathe); b.armL.el.rotation.x = -0.2 - run * 1.1;
     b.armR.sh.rotation.set(-swing, 0, -0.08 - breathe); b.armR.el.rotation.x = -0.2 - run * 1.1;
+    if (opts.swim) { const s = Math.sin(this.t * 3); b.armL.sh.rotation.set(-2.2 + s, 0, 0.3); b.armR.sh.rotation.set(-2.2 - s, 0, -0.3); b.spine.rotation.x = 0.6; }
+    if (opts.ride) { b.legL.hp.rotation.x = b.legR.hp.rotation.x = -1.35; b.legL.kn.rotation.x = b.legR.kn.rotation.x = 1.25; b.armL.sh.rotation.set(-1.15, 0, 0.2); b.armR.sh.rotation.set(-1.15, 0, -0.2); b.armL.el.rotation.x = b.armR.el.rotation.x = -0.3; b.spine.rotation.x = 0.35; b.hips.position.y = 0.95; }
     if (opts.flee) { b.armL.sh.rotation.set(-2.6, 0, 0.4); b.armR.sh.rotation.set(-2.6, 0, -0.4); b.armL.el.rotation.x = -0.6; b.armR.el.rotation.x = -0.6; }
     if (opts.handsUp) { b.armL.sh.rotation.set(-2.9, 0, 0.3); b.armR.sh.rotation.set(-2.9, 0, -0.3); b.armL.el.rotation.x = -0.4; b.armR.el.rotation.x = -0.4; }
     // aiming: right arm straight forward, pitched; two-handed adds left arm

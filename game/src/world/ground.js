@@ -37,7 +37,8 @@ export function buildGround(ctx) {
     if (a.kind === 'parking' || a.kind === 'fuel') { flatPoly(ctx.get('asphalt', -3.4, a.pts[0][0], a.pts[0][1]), a.pts, 0, [1, 1, 1], 1); continue; }
     const k = AREA[a.kind]; if (!k) continue;
     const c = rgb(k[0]);
-    flatPoly(ctx.get('ground', k[1], a.pts[0][0], a.pts[0][1]), a.pts, 0, c, 1);
+    const tier = k[1] <= -3.85 ? -4 : k[1] < -3.65 ? -3.8 : -3.6;   // three draw tiers instead of one per land-use kind
+    flatPoly(ctx.get('ground', tier, a.pts[0][0], a.pts[0][1]), a.pts, 0, c, 1);
   }
   for (const l of data.lines || []) ribbon((x, z) => ctx.get('water', -3.5, x, z), l.pts, l.kind === 'river' ? 12 : 2.5, 0, [1, 1, 1], 'world', 1);
 }

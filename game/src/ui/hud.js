@@ -46,9 +46,15 @@ export class HUD {
   street(name, district) { if (this.locT > 0) return; this.el.street.innerHTML = `${name}<br><small style="opacity:.75;font-size:15px">${district}</small>`; this.el.street.style.opacity = 1; this.streetT = 3.5; }
   flashDamage() { this.dmgT = 0.35; }
   hit() { this.hitT = 0.15; }
+  scope(on) { if (this.scopeOn !== on) { this.scopeOn = on; document.getElementById('scope').style.display = on ? 'block' : 'none'; } }
+  radio(st) { const el = document.getElementById('radio'); el.innerHTML = `<b>${st.name}</b>${st.tag ? `<small>${st.tag}</small>` : ''}`; el.style.opacity = 1; this.radioT = 2.5; }
+  whiteout(t) { this.whiteT = t; }
   update(dt) {
     const g = this.g, P = g.player, e = this.el;
     e.hp.style.width = `${P.health}%`; e.ar.style.width = `${P.armor}%`;
+    const stEl = document.getElementById('stambar'); if (stEl) { stEl.style.width = `${P.stamina}%`; stEl.parentElement.style.opacity = P.stamina < 99 ? 1 : 0; stEl.style.background = P.staminaLock ? '#c95a3a' : ''; }
+    if ((this.radioT = (this.radioT || 0) - dt) <= 0) document.getElementById('radio').style.opacity = 0;
+    this.whiteT = Math.max(0, (this.whiteT || 0) - dt); document.getElementById('white').style.opacity = Math.min(1, this.whiteT);
     e.hp.style.background = P.health < 25 ? 'linear-gradient(#ff6b6b,#b52a2a)' : '';
     if (this.shownMoney !== P.money) { this.shownMoney += Math.sign(P.money - this.shownMoney) * Math.max(1, Math.ceil(Math.abs(P.money - this.shownMoney) * dt * 4)); if (Math.abs(this.shownMoney - P.money) < 2) this.shownMoney = P.money; }
     e.money.textContent = '$' + this.shownMoney.toLocaleString();
@@ -99,6 +105,12 @@ export class HUD {
     if (!g.missions.active) for (const m of g.missions.markers) if (m.cool <= 0) blip(m.pos.x, m.pos.z, '#ffd23f', 7, m.def.letter, true);
     if (g.missions.dest) blip(g.missions.dest.x, g.missions.dest.z, '#ffd23f', 6, null, true);
     if (g.waypoint) blip(g.waypoint.x, g.waypoint.z, '#c46bff', 5, null, true);
+    for (const pl of g.places?.list || []) blip(pl.pos.x, pl.pos.z, '#' + pl.style.color.toString(16).padStart(6, '0'), 5, pl.style.letter);
+    if (this.objectiveMarker) blip(this.objectiveMarker.x, this.objectiveMarker.z, '#ffd23f', 5, '!', true);
+    if (g.police.wanted && g.police.searching && g.police.lastKnown) {   // search area
+      const [sx, sy] = toScreen(g.police.lastKnown.x, g.police.lastKnown.z); c.strokeStyle = '#ff303099'; c.fillStyle = '#ff303022'; c.lineWidth = 2;
+      c.beginPath(); c.arc(sx, sy, 60 * S, 0, 7); c.fill(); c.stroke();
+    }
     const flash = Math.floor(g.time * 5) % 2;
     for (const v of g.police.cars) if (!v.dead) blip(v.pos.x, v.pos.z, flash ? '#ff3030' : '#3060ff', 4);
     for (const o of g.police.officers) if (o.alive) blip(o.pos.x, o.pos.z, flash ? '#3060ff' : '#ff3030', 3);

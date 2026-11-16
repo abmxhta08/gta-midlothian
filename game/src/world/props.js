@@ -65,14 +65,16 @@ export function buildProps(ctx) {
       transformed.x += sin(uTime * 1.3 + ph) * sway; transformed.z += cos(uTime * 1.1 + ph) * sway * 0.7;
       #endif`);
   };
-  const kinds = [['oak', 11], ['oak', 12], ['maple', 13], ['pine', 14], ['pine', 15], ['cedar', 16], ['ring', 17]];
+  // Fewer kinds and one shared far-LOD mesh per cell keep the instanced-mesh count (and per-frame culling cost) down.
+  const kinds = [['oak', 11], ['maple', 13], ['pine', 14], ['cedar', 16], ['ring', 17]];
+  const OAK = 0, MAPLE = 1, PINE = 2, CEDAR = 3, RING = 4, DECID = () => (rnd() < 0.62 ? OAK : MAPLE), ANY = () => { const r = rnd(); return r < 0.4 ? OAK : r < 0.65 ? MAPLE : r < 0.9 ? PINE : CEDAR; };
   const tgeo = kinds.map(([k, s]) => treeGeo(k, s));
   const cells = new Map();
   const addTree = (x, z, kind = -1, s = 0.8 + rnd() * 0.55) => {
-    const v = kind >= 0 ? kind : Math.floor(rnd() * 6);
-    const k = v * 1e6 + Math.floor(x / TREE_C) * 1000 + Math.floor(z / TREE_C);
-    let l = cells.get(k); if (!l) { l = { v, list: [] }; cells.set(k, l); } l.list.push(x, z, s);
-    if (v !== 6) grid.addCircle(x, z, 0.35 * s, 2);
+    const v = kind >= 0 ? kind : ANY();
+    const k = Math.floor(x / TREE_C) * 1000 + Math.floor(z / TREE_C);
+    let c = cells.get(k); if (!c) { c = { lists: kinds.map(() => []) }; cells.set(k, c); } c.lists[v].push(x, z, s);
+    if (v !== RING) grid.addCircle(x, z, 0.35 * s, 2);
   };
   const treeOk = (x, z) => Math.hypot(x, z) < R + 5 && !blocked(x, z, 2.2) && !onRoad(x, z, 2.5);
   for (const t of data.trees || []) if (treeOk(t[0], t[1])) addTree(t[0], t[1]);
@@ -81,43 +83,51 @@ export function buildProps(ctx) {
     const bb = bbox(a.pts), sp = a.kind === 'scrub' ? 12 : 8;
     for (let x = bb.minx; x < bb.maxx; x += sp) for (let z = bb.minz; z < bb.maxz; z += sp) {
       const px = x + rnd() * sp, pz = z + rnd() * sp;
-      if (pip(px, pz, a.pts) && treeOk(px, pz)) addTree(px, pz, rnd() < 0.45 ? 3 + Math.floor(rnd() * 2) : -1, 0.9 + rnd() * 0.6);
+      if (pip(px, pz, a.pts) && treeOk(px, pz)) addTree(px, pz, rnd() < 0.45 ? PINE : -1, 0.9 + rnd() * 0.6);
     }
   }
   for (const [x, z] of ctx.yardTrees) if (treeOk(x, z)) addTree(x, z);
   for (const sw of ctx.sidewalks) {
     if (sw.road.type !== 'residential' || hash(sw.road.id + 3) > 0.5) continue;
     const L = sw.D[sw.D.length - 1];
-    for (let s = 8; s < L - 8; s += 18 + rnd() * 16) { const p = along(sw.pts, sw.D, s), off = sw.paved ? -1.2 : 1.2; const x = p.x - p.dz * off, z = p.z + p.dx * off; if (treeOk(x, z)) addTree(x, z, Math.floor(rnd() * 3)); }
+    for (let s = 8; s < L - 8; s += 18 + rnd() * 16) { const p = along(sw.pts, sw.D, s), off = sw.paved ? -1.2 : 1.2; const x = p.x - p.dz * off, z = p.z + p.dx * off; if (treeOk(x, z)) addTree(x, z, DECID()); }
   }
   // forest wall around the map edge
   for (let a = 0; a < Math.PI * 2; a += 6 / (R + 40)) for (let d = R + 8; d < R + 130; d += 9 + rnd() * 5) {
     const aa = a + (rnd() - 0.5) * 0.004, x = Math.cos(aa) * d, z = Math.sin(aa) * d;
-    if (!onRoad(x, z, 3)) addTree(x, z, 6, 1 + rnd() * 0.5);
+    if (!onRoad(x, z, 3)) addTree(x, z, RING, 1 + rnd() * 0.5);
   }
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), ps = new THREE.Vector3(), col = new THREE.Color();
   let nTrees = 0;
   ctx.treeLOD = [];
-  for (const { v, list } of cells.values()) {
-    const n = list.length / 3, im = new THREE.InstancedMesh(tgeo[v], treeMat, n), lo = v === 6 ? null : new THREE.InstancedMesh(tgeo[6], treeMat, n);
-    let cx = 0, cz = 0;
-    for (let i = 0; i < n; i++) {
-      const s = list[i * 3 + 2]; ps.set(list[i * 3], 0, list[i * 3 + 1]); e.set(0, rnd() * 6.28, 0); q.setFromEuler(e); sc.set(s, s * (0.85 + rnd() * 0.3), s);
-      m4.compose(ps, q, sc); im.setMatrixAt(i, m4); const k = 0.8 + rnd() * 0.35; im.setColorAt(i, col.setRGB(k, k * (0.95 + rnd() * 0.1), k * 0.9));
-      if (lo) { lo.setMatrixAt(i, m4); lo.setColorAt(i, col); }
-      cx += list[i * 3]; cz += list[i * 3 + 1];
-    }
-    im.castShadow = true; im.receiveShadow = true; im.computeBoundingSphere(); scene.add(im); nTrees += n;
-    if (lo) { lo.receiveShadow = true; lo.computeBoundingSphere(); lo.visible = false; scene.add(lo); ctx.treeLOD.push({ x: cx / n, z: cz / n, hi: im, lo }); }
+  for (const { lists } of cells.values()) {
+    const nearCount = lists.slice(0, RING).reduce((a, l) => a + l.length / 3, 0);
+    const lo = nearCount ? new THREE.InstancedMesh(tgeo[RING], treeMat, nearCount) : null, his = [];
+    let li = 0, cx = 0, cz = 0;
+    lists.forEach((list, v) => {
+      const n = list.length / 3; if (!n) return;
+      const im = new THREE.InstancedMesh(tgeo[v], treeMat, n);
+      for (let i = 0; i < n; i++) {
+        const s = list[i * 3 + 2]; ps.set(list[i * 3], 0, list[i * 3 + 1]); e.set(0, rnd() * 6.28, 0); q.setFromEuler(e); sc.set(s, s * (0.85 + rnd() * 0.3), s);
+        m4.compose(ps, q, sc); im.setMatrixAt(i, m4); const k = 0.8 + rnd() * 0.35; im.setColorAt(i, col.setRGB(k, k * (0.95 + rnd() * 0.1), k * 0.9));
+        if (v !== RING) { lo.setMatrixAt(li, m4); lo.setColorAt(li, col); li++; cx += list[i * 3]; cz += list[i * 3 + 1]; }
+      }
+      im.castShadow = v !== RING; im.receiveShadow = true; im.computeBoundingSphere(); scene.add(im); nTrees += n;
+      if (v !== RING) his.push(im);
+    });
+    if (lo) { lo.receiveShadow = true; lo.computeBoundingSphere(); lo.visible = false; scene.add(lo); ctx.treeLOD.push({ x: cx / nearCount, z: cz / nearCount, his, lo, near: true }); }
   }
   ctx.treeCount = nTrees;
   ctx.updateLOD = (cam) => {
-    for (const t of ctx.treeLOD) { const near = Math.hypot(t.x - cam.x, t.z - cam.z) < TREE_LOD; t.hi.visible = near; t.lo.visible = !near; }
+    for (const t of ctx.treeLOD) {
+      const near = Math.hypot(t.x - cam.x, t.z - cam.z) < TREE_LOD; if (near === t.near) continue;
+      t.near = near; for (const h of t.his) h.visible = near; t.lo.visible = !near;
+    }
   };
 
   // ---------- bushes ----------
   const bushGeo = clean(paintGeo(blob(1, 1, 99, 1.2, 0.8, 1.2).translate(0, 0.55, 0), (x, y) => rgb(0x3f6a2c).map(c => c * (0.6 + 0.5 * y))));
-  instanceScatter(ctx.bushes.filter(([x, z]) => !ctx.insideBuilding(x, z)).map(([x, z, s]) => ({ x, z, s, rot: rnd() * 6 })), bushGeo, treeMat, true);
+  instanceScatter(ctx.bushes.filter(([x, z]) => !ctx.insideBuilding(x, z)).map(([x, z, s]) => ({ x, z, s, rot: rnd() * 6 })), bushGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 }), true);
 
   // ---------- street lights ----------
   const poleGeo = mergeGeometries([
@@ -140,7 +150,7 @@ export function buildProps(ctx) {
       grid.addCircle(x, z, 0.15, 3);
     }
   }
-  instanceScatter(lights.map(l => ({ ...l, s: 1 })), poleGeo, M.pole, true);
+  instanceScatter(lights.map(l => ({ ...l, s: 1 })), poleGeo, M.pole.clone(), true);   // own material: instanced vs plain meshes need different shader variants
   instanceScatter(lights.map(l => ({ ...l, s: 1 })), headGeo, M.lamp, false);
   const pools = instanceScatter(lights.map(l => ({ ...l, s: 1 })), poolGeo, M.pool, false);
   for (const p of pools) p.renderOrder = 1;
@@ -149,13 +159,17 @@ export function buildProps(ctx) {
   ctx.signals = buildSignals(ctx);
   // ---------- stop signs ----------
   const stopMat = new THREE.MeshStandardMaterial({ map: ctx.T.stop, transparent: true, alphaTest: 0.5, roughness: 0.5, side: THREE.DoubleSide });
+  const stopPoles = [], stopFaces = [], tmp = new THREE.Object3D();
   for (const a of ctx.stopApproaches) {
     const r = a.road, p = along(r.pts, r.D, a.s), dx = p.dx * a.dir, dz = p.dz * a.dir;
     const off = r.w / 2 + 0.9, x = p.x - dz * off, z = p.z + dx * off;
-    const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = Math.atan2(-dx, -dz);
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 2.3, 6), M.pole); pole.position.y = 1.15;
-    const face = new THREE.Mesh(new THREE.CircleGeometry(0.38, 8).rotateZ(Math.PI / 8), stopMat); face.position.set(0, 2.3, 0.05);
-    g.add(pole, face); pole.castShadow = true; scene.add(g);
+    tmp.position.set(x, 0, z); tmp.rotation.set(0, Math.atan2(-dx, -dz), 0); tmp.updateMatrix();
+    stopPoles.push(new THREE.CylinderGeometry(0.04, 0.04, 2.3, 6).translate(0, 1.15, 0).applyMatrix4(tmp.matrix));
+    stopFaces.push(new THREE.CircleGeometry(0.38, 8).rotateZ(Math.PI / 8).translate(0, 2.3, 0.05).applyMatrix4(tmp.matrix));
+  }
+  if (stopPoles.length) {
+    const pm = new THREE.Mesh(mergeGeometries(stopPoles), M.pole); pm.castShadow = true; scene.add(pm);
+    scene.add(new THREE.Mesh(mergeGeometries(stopFaces), stopMat));
   }
   // ---------- mailboxes & hydrants ----------
   const mbGeo = mergeGeometries([paintGeo(new THREE.BoxGeometry(0.08, 1.1, 0.08).translate(0, 0.55, 0), () => rgb(0x2a2a2a)), paintGeo(new THREE.BoxGeometry(0.22, 0.24, 0.48).translate(0, 1.2, 0), () => rgb(0x1a1a1a))].map(clean));
@@ -171,7 +185,7 @@ export function buildProps(ctx) {
   const spots = [];
   for (const st of ctx.stalls) if (rnd() < 0.3) spots.push({ ...st, heading: st.heading + (rnd() < 0.5 ? Math.PI : 0) });
   for (const d of ctx.driveSpots) spots.push(d);
-  const types = ['sedan', 'sedan', 'suv', 'suv', 'hatch', 'pickup'], byType = new Map();
+  const types = ['sedan', 'sedan', 'suv', 'suv', 'hatch', 'pickup', 'compact', 'compact', 'van', 'muscle'], byType = new Map();
   for (const sp of spots) {
     const type = types[Math.floor(rnd() * types.length)], dims = CAR_TYPES[type];
     if (ctx.insideBuilding(sp.x, sp.z) || grid.near(sp.x, sp.z, dims.W / 2 + 0.1) || onRoad(sp.x, sp.z, -0.5) && !sp.aisle) continue;
@@ -202,16 +216,14 @@ export function buildProps(ctx) {
   void fbm;
 }
 
-/** Signal heads at each approach + a two-phase controller per intersection cluster. */
+/** Signal heads at each approach + a two-phase controller per intersection cluster.
+ *  All poles, arms and housings are merged into one mesh and every lamp is one instance of one InstancedMesh,
+ *  so ~40 intersections cost 2 draw calls instead of ~2000 objects. */
 function buildSignals(ctx) {
   const { scene, M } = ctx;
-  const mats = {
-    off: new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.4 }),
-    r: new THREE.MeshStandardMaterial({ color: 0x300000, emissive: 0xff2010, emissiveIntensity: 3 }),
-    y: new THREE.MeshStandardMaterial({ color: 0x302000, emissive: 0xffb000, emissiveIntensity: 3 }),
-    g: new THREE.MeshStandardMaterial({ color: 0x003010, emissive: 0x10ff70, emissiveIntensity: 3 }),
-    housing: new THREE.MeshStandardMaterial({ color: 0x2a2a22, roughness: 0.6 }),
-  };
+  const OFF = new THREE.Color(0.06, 0.06, 0.06), ON = { r: new THREE.Color(4, 0.35, 0.15), y: new THREE.Color(4, 2.4, 0.1), g: new THREE.Color(0.2, 4, 1.2) };
+  const statics = [], lampMats = [], tmp = new THREE.Object3D(), child = new THREE.Object3D(); tmp.add(child);
+  const place = (geo, x, y, z, ry = 0, rz = 0) => { child.position.set(x, y, z); child.rotation.set(0, ry, rz); tmp.updateMatrixWorld(true); return geo.clone().applyMatrix4(child.matrixWorld); };
   const clusters = [];
   for (const a of ctx.signalApproaches) {
     let c = clusters.find(c => Math.hypot(c.x - a.node[0], c.z - a.node[1]) < 45);
@@ -222,23 +234,23 @@ function buildSignals(ctx) {
     let d = Math.abs(((bear - c.axis) % Math.PI + Math.PI) % Math.PI); d = Math.min(d, Math.PI - d);
     const ap = { ...a, group: d < Math.PI / 4 ? 0 : 1, x: p.x, z: p.z, dx, dz, heads: [] };
     c.approaches.push(ap);
-    // pole on the right, mast arm over the lanes
-    const off = r.w / 2 + 1.2, px = p.x - dz * off, pz = p.z + dx * off;
-    const g = new THREE.Group(); g.position.set(px, 0, pz); g.rotation.y = Math.atan2(dx, dz);
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 6.6, 8), M.pole); pole.position.y = 3.3; pole.castShadow = true;
-    const armLen = r.w / 2 + 0.6, arm = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, armLen, 6), M.pole);
-    arm.rotation.z = Math.PI / 2; arm.position.set(armLen / 2, 6.3, 0); g.add(pole, arm);
+    const off = r.w / 2 + 1.2, px = p.x - dz * off, pz = p.z + dx * off, armLen = r.w / 2 + 0.6;
+    tmp.position.set(px, 0, pz); tmp.rotation.set(0, bear, 0);
+    statics.push(place(new THREE.CylinderGeometry(0.12, 0.16, 6.6, 8), 0, 3.3, 0));
+    statics.push(place(new THREE.CylinderGeometry(0.07, 0.09, armLen, 6), armLen / 2, 6.3, 0, 0, Math.PI / 2));
     const nHeads = Math.max(1, Math.min(3, Math.round(r.w / 2 / 3.4)));
     for (let k = 0; k < nHeads; k++) {
-      const hx = off - (k + 0.5) * (r.w / 2) / nHeads, head = new THREE.Group(); head.position.set(hx, 5.55, 0);
-      const box = new THREE.Mesh(new THREE.BoxGeometry(0.36, 1.05, 0.3), mats.housing); box.castShadow = true; head.add(box);
-      const lamps = ['r', 'y', 'g'].map((col, i) => { const m = new THREE.Mesh(new THREE.CircleGeometry(0.12, 12), mats.off); m.position.set(0, 0.32 - i * 0.32, -0.16); m.rotation.y = Math.PI; head.add(m); return m; });
-      g.add(head); ap.heads.push(lamps);
+      const hx = off - (k + 0.5) * (r.w / 2) / nHeads;
+      statics.push(place(new THREE.BoxGeometry(0.36, 1.05, 0.3), hx, 5.55, 0));
+      const lamps = [0, 1, 2].map(i => { child.position.set(hx, 5.55 + 0.32 - i * 0.32, -0.16); child.rotation.set(0, Math.PI, 0); tmp.updateMatrixWorld(true); lampMats.push(child.matrixWorld.clone()); return lampMats.length - 1; });
+      ap.heads.push(lamps);
     }
-    scene.add(g);
-    grid(ctx, px, pz);
+    ctx.grid.addCircle(px, pz, 0.2, 3);
   }
-  function grid(ctx, x, z) { ctx.grid.addCircle(x, z, 0.2, 3); }
+  if (statics.length) { const m = new THREE.Mesh(mergeGeometries(statics.map(g => g.index ? g.toNonIndexed() : g)), M.pole); m.castShadow = true; scene.add(m); }
+  const lampMesh = new THREE.InstancedMesh(new THREE.CircleGeometry(0.12, 12), new THREE.MeshBasicMaterial({ color: 0xffffff }), Math.max(1, lampMats.length));
+  lampMats.forEach((m, i) => { lampMesh.setMatrixAt(i, m); lampMesh.setColorAt(i, OFF); });
+  lampMesh.count = lampMats.length; lampMesh.computeBoundingSphere(); scene.add(lampMesh);
   const CYCLE = [[0, 'g', 16], [0, 'y', 3.5], [-1, 'r', 1.5], [1, 'g', 14], [1, 'y', 3.5], [-1, 'r', 1.5]], TOTAL = CYCLE.reduce((a, c) => a + c[2], 0);
   const stateOf = (c, group, t) => {
     let u = (t + c.offset) % TOTAL;
@@ -252,8 +264,9 @@ function buildSignals(ctx) {
       if (Math.floor(t * 4) === lastT) return; lastT = Math.floor(t * 4);
       for (const c of clusters) for (const ap of c.approaches) {
         const st = stateOf(c, ap.group, t); ap.state = st;
-        for (const [r, y, g] of ap.heads) { r.material = st === 'r' ? mats.r : mats.off; y.material = st === 'y' ? mats.y : mats.off; g.material = st === 'g' ? mats.g : mats.off; }
+        for (const [r, y, g] of ap.heads) { lampMesh.setColorAt(r, st === 'r' ? ON.r : OFF); lampMesh.setColorAt(y, st === 'y' ? ON.y : OFF); lampMesh.setColorAt(g, st === 'g' ? ON.g : OFF); }
       }
+      if (lampMesh.instanceColor) lampMesh.instanceColor.needsUpdate = true;
     },
     /** Signal state for a vehicle at (x,z) moving (dx,dz): returns {state, dist} for the approach ahead, or null. */
     ahead(x, z, dx, dz, maxD = 45) {

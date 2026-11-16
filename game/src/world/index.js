@@ -9,10 +9,13 @@ import { buildProps } from './props.js';
 
 function freeArray() { this.array = null; }
 
-export async function buildWorld(scene, map, T, step = async () => {}) {
+export async function buildWorld(gameScene, map, T, step = async () => {}) {
+  // Everything built here is static: put it under one parent whose matrices are computed once and then
+  // skipped by three.js's per-frame scene traversal (this was ~25% of frame time).
+  const scene = new THREE.Group(); scene.name = 'static-world'; gameScene.add(scene);
   const M = makeMaterials(T);
   M.swim = Object.assign(new THREE.MeshStandardMaterial({ color: 0x48b4dc, roughness: 0.04, metalness: 0.1, normalMap: T.waterNormal }), { depthTest: false, depthWrite: false });
-  const chunks = new Chunks(400);
+  const chunks = new Chunks(600);   // larger cells = fewer meshes/draw calls (CPU), slightly coarser culling (GPU)
   const ctx = { scene, data: map.data, map, M, T, grid: new SegGrid(24), custom: {}, solids: [] };
   ctx.get = (key, order, x, z) => chunks.get(key + '@' + order, x, z);
 
@@ -46,6 +49,8 @@ export async function buildWorld(scene, map, T, step = async () => {}) {
     for (const a of Object.values(mesh.geometry.attributes)) a.onUpload(freeArray);   // and the typed arrays once on the GPU
   }
   ctx.tris = tris; chunks.map.clear();
+  scene.traverse(o => { o.matrixAutoUpdate = false; o.updateMatrix(); });
+  scene.updateMatrixWorld(true); scene.matrixWorldAutoUpdate = false;
   ctx.nightUpdate = (night, t) => {
     M.nightUpdate(night, t);
     for (const m of ctx.signMats) m.emissiveIntensity = 0.12 + night * 1.3;

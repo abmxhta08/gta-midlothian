@@ -34,6 +34,7 @@ export class Pickups {
     for (const l of locs) {
       const c = l.c || [0, 0], sp = game.peds.nearestSidewalk(c[0], c[1], 90);
       if (!sp || Math.random() < 0.35) continue;
+      if (game.places?.list.some(p => Math.hypot(p.pos.x - sp.x, p.pos.z - sp.z) < 20)) continue;   // keep markers / respawn points clear
       this.add(kinds[k++ % kinds.length], sp.x, sp.z, { respawn: 90 });
     }
   }
@@ -49,6 +50,7 @@ export class Pickups {
       const it = this.items[i]; it.t += dt;
       if (!it.active) { if (it.respawn && (it.wait -= dt) <= 0) { it.active = true; it.mesh.visible = true; } continue; }
       if (it.life && it.t > it.life) { g.scene.remove(it.mesh); this.items.splice(i, 1); continue; }
+      const far = Math.abs(pp.x - it.pos.x) > 160 || Math.abs(pp.z - it.pos.z) > 160; it.mesh.visible = !far; if (far) continue;
       it.mesh.userData.spin.rotation.y += dt * 2; it.mesh.position.y = 0.9 + Math.sin(it.t * 2.5) * 0.12;
       if (Math.abs(pp.x - it.pos.x) > 3 || Math.abs(pp.z - it.pos.z) > 3) continue;
       if (Math.hypot(pp.x - it.pos.x, pp.z - it.pos.z) > (P.vehicle ? 2.6 : 1.4)) continue;

@@ -1,11 +1,14 @@
+import { Radio } from './audio/radio.js';
+import { settings } from './config/settings.js';
+
 /** Synthesized audio (no sound files). Positional falloff by distance to the listener. */
 export class Audio {
-  constructor() { this.ctx = null; this.listener = { x: 0, z: 0 }; }
+  constructor() { this.ctx = null; this.listener = { x: 0, z: 0 }; this.radio = new Radio(this); }
   init() {
     if (this.ctx) { this.ctx.resume?.(); return; }
     const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
     const c = this.ctx = new AC();
-    this.master = c.createGain(); this.master.gain.value = 0.55;
+    this.master = c.createGain(); this.master.gain.value = 0.7 * settings.volume;
     const comp = c.createDynamicsCompressor(); this.master.connect(comp); comp.connect(c.destination);
     const len = c.sampleRate * 1.2; this.noise = c.createBuffer(1, len, c.sampleRate);
     const d = this.noise.getChannelData(0); for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
@@ -21,6 +24,9 @@ export class Audio {
     const amb = c.createBufferSource(); amb.buffer = this.noise; amb.loop = true;
     const af = c.createBiquadFilter(); af.type = 'lowpass'; af.frequency.value = 280; this.ag = c.createGain(); this.ag.gain.value = 0.05;
     amb.connect(af); af.connect(this.ag); this.ag.connect(this.master); amb.start();
+    // rain hiss
+    const rn = c.createBufferSource(); rn.buffer = this.noise; rn.loop = true; const rf = c.createBiquadFilter(); rf.type = 'highpass'; rf.frequency.value = 1500;
+    this.rg = c.createGain(); this.rg.gain.value = 0; rn.connect(rf); rf.connect(this.rg); this.rg.connect(this.master); rn.start();
   }
   vol(p, base = 1, range = 120) { if (!p) return base; const d = Math.hypot(p.x - this.listener.x, p.z - this.listener.z); return base * Math.max(0, 1 - d / range) ** 1.5; }
   burst(freq, vol, dur = 0.3, rate = 1, type = 'lowpass') {
@@ -68,5 +74,7 @@ export class Audio {
     this.sg.gain.setTargetAtTime(level * 0.07, this.ctx.currentTime, 0.2);
     this.so.frequency.setTargetAtTime(720 + Math.sin(t * 5) * 260, this.ctx.currentTime, 0.02);
   }
+  setVolume(v) { if (this.master) this.master.gain.setTargetAtTime(0.7 * v, this.ctx.currentTime, 0.05); }
+  rain(k) { if (this.rg) this.rg.gain.setTargetAtTime(0.08 * k, this.ctx.currentTime, 0.5); }
   ambient(night) { if (this.ctx) this.ag.gain.setTargetAtTime(0.03 + (1 - night) * 0.03, this.ctx.currentTime, 1); }
 }

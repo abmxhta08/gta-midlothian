@@ -11,7 +11,7 @@
 
 <div id="hud">
   <div id="mmwrap"><canvas id="minimap" width="300" height="200"></canvas>
-    <div id="bars"><div class="bar"><i id="hpbar"></i></div><div class="bar armor"><i id="arbar"></i></div></div></div>
+    <div id="bars"><div class="bar"><i id="hpbar"></i></div><div class="bar armor"><i id="arbar"></i></div></div><div id="stamwrap"><i id="stambar"></i></div></div>
   <div id="topright">
     <div id="weapon"><span id="wname">Pistol</span> <span id="ammo">12 / 96</span></div>
     <div id="money">$0</div>
@@ -26,7 +26,17 @@
   <div id="cross"></div>
   <div id="toast"></div>
   <div id="big"><div id="bigt"></div><div id="bigs"></div></div>
+  <div id="radio"></div>
+  <div id="subs"></div>
+  <div id="checklist"></div>
 </div>
+<div id="scope"><div class="ring"></div></div>
+<div id="white"></div>
+<div id="wheel"></div>
+<div id="menu"></div>
+<div id="phone"></div>
+<div id="settings"></div>
+<div id="title"></div>
 
 <canvas id="fullmap"></canvas>
 <div id="maphint">Drag to pan · Scroll to zoom · Click to set waypoint · Right-click to clear · M to close</div>
@@ -36,15 +46,16 @@
   <div class="cols">
   <table>
     <tr><td>W A S D</td><td>move / drive</td></tr><tr><td>Mouse</td><td>look</td></tr>
-    <tr><td>Shift</td><td>sprint</td></tr><tr><td>Space</td><td>jump / handbrake</td></tr>
-    <tr><td>Left click</td><td>shoot / punch</td></tr><tr><td>Right click</td><td>aim</td></tr>
-    <tr><td>1-5 / wheel</td><td>switch weapon</td></tr><tr><td>R</td><td>reload</td></tr>
+    <tr><td>Shift</td><td>sprint (stamina)</td></tr><tr><td>Space</td><td>jump · vault · handbrake</td></tr>
+    <tr><td>Left / right click</td><td>shoot / aim</td></tr><tr><td>Hold Q</td><td>weapon wheel</td></tr>
+    <tr><td>1-8 / wheel</td><td>switch weapon</td></tr><tr><td>R</td><td>reload · flip car</td></tr>
   </table><table>
-    <tr><td>F or E</td><td>enter / exit / steal car</td></tr><tr><td>H</td><td>horn</td></tr>
-    <tr><td>M</td><td>full map</td></tr><tr><td>T</td><td>time of day</td></tr>
-    <tr><td>G</td><td>graphics quality</td></tr><tr><td>C</td><td>camera distance</td></tr>
-    <tr><td>Yellow markers</td><td>missions</td></tr><tr><td>Esc</td><td>pause</td></tr>
+    <tr><td>F</td><td>enter / exit / steal car</td></tr><tr><td>E</td><td>interact (shops, safehouse)</td></tr>
+    <tr><td>C</td><td>take cover</td></tr><tr><td>N / H</td><td>radio / horn</td></tr>
+    <tr><td>M / P</td><td>map / phone</td></tr><tr><td>V</td><td>camera distance</td></tr>
+    <tr><td>G / F3</td><td>graphics / debug</td></tr><tr><td>Esc</td><td>pause</td></tr>
   </table></div>
+  <div class="pbtns"><button id="resume">Resume</button><button id="psettings">Settings</button></div>
   <div id="qual"></div>
   <div id="ver" style="margin-top:6px;font-size:11px;opacity:.45">old version? press Cmd+Shift+R</div>
 </div></div>

@@ -2,17 +2,21 @@ import * as THREE from 'three';
 import { Human } from './entities/human.js';
 import { along, shortestAngle, clamp } from './util.js';
 import { weaponMesh } from './weapons.js';
+import { settings } from './config/settings.js';
+import { PED_TYPES, pickType, setupType } from './pedtypes.js';
 
 /** A pedestrian or police officer on foot. */
 export class Ped {
   constructor(game, x, z, opts = {}) {
     this.game = game; this.cop = !!opts.cop;
-    this.h = new Human(game.scene, { cop: this.cop });
+    const type = opts.type || 'civilian';
+    this.h = new Human(game.scene, { cop: this.cop, ...(this.cop ? {} : PED_TYPES[type]?.look() || {}) });
     this.pos = new THREE.Vector3(x, 0, z); this.vel = new THREE.Vector3(); this.yaw = opts.yaw ?? Math.random() * 6.28;
     this.health = this.cop ? 120 : 100; this.state = opts.state || 'walk'; this.timer = 0; this.speed = 0;
     this.path = null; this.s = 0; this.dir = 1; this.lat = (Math.random() - 0.5) * 0.8; this.walkSpeed = 1.15 + Math.random() * 0.5;
     this.fleeFrom = new THREE.Vector3(); this.removeT = 0; this.vy = 0; this.y = 0; this.shootT = 1 + Math.random(); this.arrestT = 0;
     if (this.cop) { this.weapon = weaponMesh('pistol'); this.h.setWeaponMesh(this.weapon); }
+    else setupType(this, type);
     this.sync();
   }
   get alive() { return this.state !== 'dead'; }
@@ -31,11 +35,12 @@ export class Ped {
   damage(n, src = null, dir = null) {
     if (this.state === 'dead') return;
     this.health -= n;
+    if (this.gang && src === 'player') this.game.peds.provoke(this);
     if (this.health <= 0) {
-      this.state = 'dead'; this.h.dead = 0.01; this.removeT = 40;
+      this.state = 'dead'; this.h.dead = 0.01; this.removeT = settings.reducedViolence ? 10 : 40;
       this.h.deathDir = dir && (dir.x * Math.sin(this.yaw) + dir.z * Math.cos(this.yaw)) > 0 ? -1 : 1;
       this.game.onPedKilled(this, src);
-    } else if (!this.cop) { this.flee(src ? src : this.pos, 10 + Math.random() * 6); this.game.audio.scream(this.pos); }
+    } else if (!this.cop && !this.gang) { this.flee(src ? src : this.pos, 10 + Math.random() * 6); this.game.audio.scream(this.pos); }
   }
   knock(vx, vz, dmg, src) {
     if (this.state === 'dead') return;
@@ -45,8 +50,11 @@ export class Ped {
     this.game.audio.punch(this.pos);
     if (this.health <= 0) { this.health = 0; this.pendingDeath = src || 'vehicle'; }
   }
+  /** Stun grenade: dazed for `t` seconds, then (civilians) run away. */
+  stun(t) { if (this.state === 'dead' || this.state === 'knocked') return; this.prevState = this.state === 'stunned' ? this.prevState : this.state; this.state = 'stunned'; this.timer = t; this.aimK = 0; }
   flee(from, time = 10) {
-    if (this.state === 'dead' || this.state === 'knocked' || this.cop) return;
+    if (this.state === 'dead' || this.state === 'knocked' || this.state === 'stunned' || this.cop || this.state === 'hostile' || this.noFlee) return;
+    if (this.gang && this.state === 'hang') return;
     this.state = 'flee'; this.timer = time; this.fleeFrom.set(from.x, 0, from.z);
   }
   update(dt) {
@@ -90,8 +98,12 @@ export class Ped {
     } else if (this.state === 'cop') {
       speed = g.police.copThink(this, dt, opts);
     } else if (this.state === 'hostage') { opts.handsUp = true; }
+    else if (this.state === 'hang') { if (Math.random() < dt * 0.3) this.yaw += (Math.random() - 0.5) * 1.5; }
+    else if (this.state === 'hostile') { speed = g.peds.gangThink(this, dt, opts); }
+    else if (this.state === 'calling') { opts.handsUp = false; }
+    else if (this.state === 'stunned') { opts.crouch = true; this.yaw += dt * 1.5; if ((this.timer -= dt) <= 0) { if (this.cop || this.hostile) this.state = this.prevState || 'walk'; else this.flee(this.pos.clone().add(new THREE.Vector3(1, 0, 0)), 6); } }
     // dodge fast vehicles heading at us
-    if (this.state !== 'cop') for (const v of g.vehicles) {
+    if (this.state !== 'cop' && this.state !== 'hostile') for (const v of g.vehicles) {
       const sp = v.speed; if (sp < 4) continue;
       const rx = this.pos.x - v.pos.x, rz = this.pos.z - v.pos.z, d = Math.hypot(rx, rz); if (d > 14) continue;
       const along_ = (rx * v.vx + rz * v.vz) / sp, lat = Math.abs(rx * v.vz - rz * v.vx) / sp;
@@ -101,7 +113,8 @@ export class Ped {
     g.world.bounds(this.pos);
     this.speed = speed;
     opts.aim = this.aimK || 0; opts.pitch = 0;
-    this.h.twoHand = false;
+    if (this.calling > 0) { this.calling -= dt; this.h.armR.sh.rotation.x = -2.6; }
+    this.h.twoHand = !!this.tactical;
     this.h.animate(dt, speed, opts);
     this.sync();
   }
@@ -142,14 +155,44 @@ export class PedManager {
       const dd = Math.hypot(sm.x - px, sm.z - pz); if (dd < minD || dd > maxD) continue;
       const vis = ((sm.x - cam.position.x) * fwd.x + (sm.z - cam.position.z) * fwd.z) / dd;
       if (!opts.anywhere && vis > 0.35 && dd < 90) continue;
-      if (g.map.inSchool(sm.x, sm.z)) continue;
-      const p = new Ped(g, sm.x, sm.z, opts);
-      p.path = sm.path; p.s = sm.s; p.dir = Math.random() < 0.5 ? 1 : -1;
-      this.list.push(p); return p;
+      if (g.zones.nearSafeZone(sm.x, sm.z, 10)) continue;
+      const type = opts.type || pickType(Math.random(), !g.zones.nearSafeZone(sm.x, sm.z, 150));
+      const n = type === 'gang' ? PED_TYPES.gang.group : 1;
+      let first = null;
+      for (let k = 0; k < n; k++) {
+        const p = new Ped(g, sm.x + (k ? (Math.random() - 0.5) * 3 : 0), sm.z + (k ? (Math.random() - 0.5) * 3 : 0), { ...opts, type });
+        p.path = sm.path; p.s = sm.s; p.dir = Math.random() < 0.5 ? 1 : -1; if (type === 'gang') p.group = sm;
+        this.list.push(p); first = first || p;
+      }
+      return first;
     }
     return null;
   }
   add(p) { this.list.push(p); return p; }
+  /** Gang members fight back: everyone in the same crew near `p` turns hostile. */
+  provoke(p) {
+    if (this.game.zones.inSafeZone(this.game.player.pos.x, this.game.player.pos.z)) return;
+    for (const q of this.list) if (q.gang && q.alive && q.state !== 'knocked' && (q.group === p.group || q.pos.distanceTo(p.pos) < 25)) {
+      q.state = 'hostile'; q.hostile = true; q.h.setWeaponMesh(q.weapon); q.shootT = 0.8 + Math.random();
+    }
+  }
+  /** Hostile gang member: close in and shoot at the player. Never inside school zones. */
+  gangThink(o, dt, opts) {
+    const g = this.game, P = g.player, tp = P.vehicle ? P.vehicle.pos : P.pos;
+    const dx = tp.x - o.pos.x, dz = tp.z - o.pos.z, d = Math.hypot(dx, dz);
+    if (d > 90 || g.zones.inSafeZone(tp.x, tp.z)) { o.aimK = 0; if (d > 90) { o.state = 'walk'; o.hostile = false; o.path = null; } return 0; }
+    o.turnTo(Math.atan2(dx, dz), dt, 7);
+    let speed = 0; const los = g.police.los(o.pos, tp);
+    if (d > 13 || !los) { speed = 4.5; o.pos.x += Math.sin(o.yaw) * speed * dt; o.pos.z += Math.cos(o.yaw) * speed * dt; }
+    o.aimK = los && d < 45 ? Math.min(1, (o.aimK || 0) + dt * 3) : Math.max(0, (o.aimK || 0) - dt * 3);
+    if (o.aimK > 0.9 && (o.shootT -= dt) <= 0) {
+      o.shootT = 0.8 + Math.random() * 0.8;
+      const hit = Math.random() < Math.max(0.05, 0.38 - d * 0.008), sp = hit ? 0.2 : 3;
+      const muzzle = new THREE.Vector3(o.pos.x + Math.sin(o.yaw) * 0.6, 1.45, o.pos.z + Math.cos(o.yaw) * 0.6);
+      g.combat.npcShot(o, muzzle, new THREE.Vector3(tp.x + (Math.random() - 0.5) * sp, 1.1, tp.z + (Math.random() - 0.5) * sp), hit ? 6 + Math.random() * 4 : 0);
+    }
+    opts.aim = o.aimK; return speed;
+  }
   panic(x, z, radius, src) {
     for (const p of this.list) if (!p.cop && p.alive && Math.hypot(p.pos.x - x, p.pos.z - z) < radius) { p.flee(src || { x, z }, 8 + Math.random() * 6); if (Math.random() < 0.15) this.game.audio.scream(p.pos); }
   }
@@ -165,6 +208,15 @@ export class PedManager {
       if ((d > 180 && !p.keep) || (p.state === 'dead' && p.removeT <= 0) || p.remove) { p.dispose(); this.list.splice(i, 1); continue; }
       if (d < 140 || p.cop) p.update(dt); else p.h.root.visible = false;
       if (d < 140) { p.h.root.visible = true; if (p.h.mesh) p.h.mesh.castShadow = d < 45; }
+    }
+    // gangs react to being aimed at
+    if ((this.aimT = (this.aimT || 0) - dt) <= 0 && g.player.aiming && !g.player.vehicle) {
+      this.aimT = 0.3; const cam = g.camera, f = new THREE.Vector3(); cam.getWorldDirection(f);
+      for (const q of this.list) {
+        if (!q.gang || q.state !== 'hang') continue;
+        const v = q.pos.clone().sub(cam.position); v.y = 0; const d = v.length(); if (d > 22) continue;
+        if (v.normalize().dot(new THREE.Vector3(f.x, 0, f.z).normalize()) > 0.96) { this.provoke(q); g.hud.toast('You provoked a gang'); }
+      }
     }
     // vehicles vs peds
     for (const v of g.vehicles) {

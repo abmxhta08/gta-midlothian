@@ -30,7 +30,23 @@ const TYPES = {
   pickup: { W: 2.0, r: 0.42, wf: 1.75, wr: -1.65, clear: 0.42, bed: [-2.75, -0.62],
     top: [[-2.82, 0.72], [-2.82, 1.12], [1.25, 1.12], [2.6, 1.0], [2.8, 0.7]],
     cab: [[-0.6, 1.1], [-0.55, 1.86], [0.7, 1.88], [1.3, 1.1]], roof: [-0.55, 0.7, 1.87], speed: 0.95, mass: 1.5 },
-  police: { base: 'sedan', speed: 1.18, mass: 1.1 },
+  police: { base: 'sedan', lightbar: true },
+  taxi: { base: 'sedan', sign: true },
+  compact: { W: 1.7, r: 0.31, wf: 1.2, wr: -1.15, clear: 0.28,
+    top: [[-1.85, 0.58], [-1.82, 0.9], [0.9, 0.9], [1.75, 0.76], [1.88, 0.55]],
+    cab: [[-1.8, 0.88], [-1.6, 1.42], [0.35, 1.45], [0.95, 0.88]], roof: [-1.58, 0.35, 1.44] },
+  muscle: { W: 1.9, r: 0.36, wf: 1.55, wr: -1.45, clear: 0.28, scoop: true,
+    top: [[-2.45, 0.6], [-2.4, 0.9], [-1.3, 0.95], [0.5, 0.92], [2.35, 0.82], [2.48, 0.58]],
+    cab: [[-1.35, 0.93], [-0.75, 1.3], [0.05, 1.32], [0.55, 0.9]], roof: [-0.75, 0.05, 1.31] },
+  van: { W: 2.0, r: 0.38, wf: 1.75, wr: -1.6, clear: 0.36,
+    top: [[-2.6, 0.7], [-2.6, 2.05], [0.9, 2.05], [0.95, 1.15], [2.35, 1.08], [2.55, 0.65]],
+    cab: [[0.9, 1.13], [0.92, 2.0], [1.15, 2.0], [2.0, 1.13]], roof: [-2.5, 0.9, 2.04] },
+  swat: { base: 'van', lightbar: true },
+  bus: { W: 2.5, r: 0.5, wf: 3.6, wr: -2.9, clear: 0.4, cabW: 1.02,
+    top: [[-5.6, 0.7], [-5.6, 3.0], [5.4, 3.0], [5.6, 2.6], [5.65, 0.7]],
+    cab: [[-5.3, 1.55], [-5.3, 2.6], [5.3, 2.6], [5.55, 1.55]], roof: [-5.5, 5.35, 3.0] },
+  motorcycle: { bike: true, W: 0.8, r: 0.32, wf: 0.72, wr: -0.72, wheelW: 0.16 },
+  bicycle: { bike: true, pedal: true, W: 0.6, r: 0.34, wf: 0.56, wr: -0.5, wheelW: 0.05 },
 };
 for (const k in TYPES) if (TYPES[k].base) TYPES[k] = { ...TYPES[TYPES[k].base], ...TYPES[k] };
 export const CAR_TYPES = TYPES;
@@ -52,6 +68,7 @@ const cache = new Map();
 export function carParts(type, lod = 0) {
   const ck = type + ':' + lod; if (cache.has(ck)) return cache.get(ck);
   LOD = lod;
+  if (TYPES[type].bike) { const b = bikeParts(type); cache.set(ck, b); LOD = 0; return b; }
   const t = TYPES[type], W = t.W, parts = [];
   const add = (geo, mat) => parts.push({ geo, mat });
   // body with wheel-arch cut-outs
@@ -63,7 +80,7 @@ export function carParts(type, lod = 0) {
   s.lineTo(t.wr + ar, t.clear); s.lineTo(t.wr + ar, t.r); s.absarc(t.wr, t.r, ar, 0, Math.PI, false); s.lineTo(t.wr - ar, t.clear);
   s.closePath();
   add(extrudeShape(s, W, 0.07), 'paint');
-  add(extrudeProfile(t.cab, W * 0.84, 0.04), 'glass');
+  add(extrudeProfile(t.cab, W * (t.cabW || 0.84), 0.04), 'glass');
   const [r0, r1, ry] = t.roof;
   add(extrudeProfile([[r0, ry - 0.03], [r1, ry - 0.02], [r1 - 0.06, ry + 0.04], [r0 + 0.06, ry + 0.035]], W * 0.87, 0.03), 'paint');
   const cabMid = (t.cab[0][0] + t.cab[3][0]) / 2, cabH = t.roof[2] - t.cab[0][1];
@@ -78,20 +95,51 @@ export function carParts(type, lod = 0) {
   }
   add(box(0.52, 0.12, 0.03, 0, bh + 0.2, zr - 0.02), 'plate');
   if (t.bed) add(box(W - 0.24, 0.02, t.bed[1] - t.bed[0], 0, 1.13, (t.bed[0] + t.bed[1]) / 2), 'trim');
-  if (type === 'police') {
-    add(box(1.1, 0.13, 0.3, -0.3, t.roof[2] + 0.1, cabMid), 'red');
-    add(box(1.1, 0.13, 0.3, 0.3 + 0.25, t.roof[2] + 0.1, cabMid), 'blue');
-    add(box(0.06, 0.42, 1.7, W / 2 + 0.03, 0.72, 0.1), 'plate'); add(box(0.06, 0.42, 1.7, -W / 2 - 0.03, 0.72, 0.1), 'plate');
+  if (t.lightbar) {
+    const lz = type === 'swat' ? 0.4 : cabMid;
+    add(box(0.55, 0.13, 0.3, -0.3, t.roof[2] + 0.1, lz), 'red');
+    add(box(0.55, 0.13, 0.3, 0.3, t.roof[2] + 0.1, lz), 'blue');
+    if (type === 'police') { add(box(0.06, 0.42, 1.7, W / 2 + 0.03, 0.72, 0.1), 'plate'); add(box(0.06, 0.42, 1.7, -W / 2 - 0.03, 0.72, 0.1), 'plate'); }
     add(box(W * 0.6, 0.28, 0.12, 0, 0.55, zf + 0.12), 'trim');
   }
+  if (t.sign) add(box(0.62, 0.22, 0.26, 0, t.roof[2] + 0.13, cabMid), 'head');
+  if (t.scoop) add(box(0.5, 0.1, 0.8, 0, t.top[t.top.length - 2][1] + 0.05, 1.3), 'trim');
+  if (type === 'bus') for (const x of [-1, 1]) add(box(0.04, 1.9, 0.9, x * (W / 2 + 0.01), 1.55, 4.6), 'trim');   // doors
   const wheels = [];
   for (const z of [t.wf, t.wr]) for (const x of [-1, 1]) wheels.push({ x: x * (W / 2 - 0.13), y: t.r, z, r: t.r, front: z > 0 });
   const out = { parts, wheels, dims: { hl: (front - rear) / 2, hw: W / 2, h: t.roof[2], wb: t.wf - t.wr, zc: (front + rear) / 2 }, t };
   cache.set(ck, out); LOD = 0; return out;
 }
-export function wheelGeo(r, seg = 22) {
-  const tire = new THREE.CylinderGeometry(r, r, 0.26, seg).rotateZ(Math.PI / 2).toNonIndexed();
-  const rim = new THREE.CylinderGeometry(r * 0.64, r * 0.64, 0.27, Math.max(6, seg >> 1)).rotateZ(Math.PI / 2).toNonIndexed();
+/** Motorcycle / bicycle model built from boxes. */
+function bikeParts(type) {
+  const t = TYPES[type], parts = [], add = (geo, mat) => parts.push({ geo, mat });
+  if (type === 'motorcycle') {
+    add(box(0.16, 0.3, 1.2, 0, 0.62, 0), 'trim');
+    add(box(0.32, 0.24, 0.55, 0, 0.92, 0.22), 'paint');
+    add(box(0.28, 0.1, 0.62, 0, 0.94, -0.3), 'trim');
+    add(box(0.3, 0.3, 0.42, 0, 0.48, 0.0), 'chrome');
+    add(box(0.06, 0.55, 0.06, 0, 0.75, 0.62), 'chrome');
+    add(box(0.72, 0.05, 0.05, 0, 1.08, 0.55), 'chrome');
+    add(box(0.18, 0.14, 0.08, 0, 0.92, 0.74), 'head');
+    add(box(0.16, 0.08, 0.05, 0, 0.82, -0.66), 'tail');
+    add(box(0.08, 0.08, 0.7, 0.18, 0.4, -0.35), 'chrome');
+    add(box(0.3, 0.08, 0.5, 0, 0.76, -0.5), 'paint');
+  } else {
+    add(box(0.04, 0.04, 0.72, 0, 0.86, 0.05), 'paint');
+    add(box(0.04, 0.6, 0.04, 0, 0.62, -0.28), 'paint');
+    const dt = box(0.04, 0.04, 0.85, 0, 0, 0); dt.rotateX(-0.62); dt.translate(0, 0.6, 0.18); add(dt, 'paint');
+    add(box(0.04, 0.04, 0.6, 0, 0.36, -0.22), 'paint');
+    add(box(0.05, 0.62, 0.05, 0, 0.66, 0.55), 'chrome');
+    add(box(0.56, 0.04, 0.04, 0, 1.0, 0.5), 'trim');
+    add(box(0.16, 0.06, 0.26, 0, 0.95, -0.3), 'trim');
+  }
+  const wheels = [{ x: 0, y: t.r, z: t.wf, r: t.r, front: true }, { x: 0, y: t.r, z: t.wr, r: t.r, front: false }];
+  return { parts, wheels, dims: { hl: 1.05, hw: 0.38, h: 1.2, wb: t.wf - t.wr, zc: 0 }, t };
+}
+
+export function wheelGeo(r, seg = 22, w = 0.26) {
+  const tire = new THREE.CylinderGeometry(r, r, w, seg).rotateZ(Math.PI / 2).toNonIndexed();
+  const rim = new THREE.CylinderGeometry(r * 0.64, r * 0.64, w + 0.01, Math.max(6, seg >> 1)).rotateZ(Math.PI / 2).toNonIndexed();
   return { tire, rim };
 }
 
@@ -126,7 +174,7 @@ export function dynamicCar(type) {
     byKey.get(k).push(k === 'misc' ? colorize(p.geo, PART_COL[p.mat]) : strip(p.geo));
   }
   const groups = {}; for (const [k, l] of byKey) groups[k] = mergeGeometries(l);
-  const r = wheels[0].r, wg = wheelGeo(r, 18);
+  const r = wheels[0].r, wg = wheelGeo(r, 18, TYPES[type].wheelW || 0.26);
   const wheel = mergeGeometries([colorize(wg.tire, PART_COL.tire), colorize(wg.rim, PART_COL.rim)]);
   const res = { groups, wheel }; dynCache.set(type, res); return res;
 }

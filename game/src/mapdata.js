@@ -118,6 +118,8 @@ export function prepareData(data) {
     for (const p of data.places || []) { const d = Math.hypot(p.p[0] - x, p.p[1] - z); if (d < bd) { bd = d; best = p.name; } }
     return best || 'Midlothian';
   };
+  M.water = data.areas.filter(a => a.kind === 'water' || a.kind === 'swimming_pool').map(a => ({ pts: a.pts, bb: bbox(a.pts) }));
+  M.inWater = (x, z) => { for (const w of M.water) if (x >= w.bb.minx && x <= w.bb.maxx && z >= w.bb.minz && z <= w.bb.maxz && pip(x, z, w.pts)) return true; return false; };
   M.schoolPolys = data.areas.filter(a => a.kind === 'school').map(a => a.pts);
   M.inSchool = (x, z) => M.schoolPolys.some(p => pip(x, z, p));
   M.streetAt = (x, z) => { const n = M.nearestRoad(x, z, 18, r => !!r.name); return n ? n.road.name : null; };

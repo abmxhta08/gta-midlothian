@@ -56,6 +56,8 @@ export function installTestHooks(game) {
     knockAllPeds() { for (const p of g.peds.list) p.knock(0, 0, 0, 'test'); return true; },
     throwInUpdate() { g._testThrow = true; return true; },
     pendingCalls() { return g.police.calls.pending.length; },
+    /** Stop the live loop from updating (rendering continues) so tests drive frames deterministically with run(). */
+    freeze(on = true) { g.testFrozen = on; return on; },
     eval(fn) { return fn(g); },
     THREE,
   };
