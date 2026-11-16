@@ -96,7 +96,7 @@ export class FullMap {
     c.fillStyle = '#000b'; c.fillRect(16, 16, 230, 132); c.fillStyle = '#fff'; c.font = '700 18px Oswald, Inter'; c.textAlign = 'left'; c.textBaseline = 'top'; c.fillText('MIDLOTHIAN, VA', 28, 24);
     c.font = '13px Inter'; const items = [['#ffd23f', 'Mission'], ['#c46bff', 'Waypoint / GPS'], ['#3cff6a', 'Health'], ['#3c9bff', 'Armor'], ['#ffa63c', 'Weapon']];
     items.forEach(([col, t], i) => { c.fillStyle = col; c.beginPath(); c.arc(34, 60 + i * 17, 5, 0, 7); c.fill(); c.fillStyle = '#ddd'; c.fillText(t, 46, 53 + i * 17); });
-    c.fillStyle = '#fff8'; c.font = '11px Inter'; c.textAlign = 'right'; c.fillText('© OpenStreetMap contributors', W - 12, H - 40);
+    // (the OpenStreetMap credit is the page's #credit element, always on top)
     void cumLen;
   }
 }

@@ -273,7 +273,12 @@ export const STEPS = {
   /** Load a subdued target into your vehicle and drive them somewhere (e.g. the police station). */
   dropoff: {
     // you drive there: snap the drop point to the nearest road
-    start(M, s) { s.pos = M.loc(s.to); const n = M.g.map.nearestRoad(s.pos.x, s.pos.z, 80, r => r.type !== 'service'); if (n) s.pos.set(n.px, 0, n.pz); },
+    start(M, s) {
+      s.pos = M.loc(s.to);
+      const r = M.g.map.route(M.pp.x, M.pp.z, s.pos.x, s.pos.z);   // where the road network actually gets you
+      if (r && Math.hypot(r.at(-1)[0] - s.pos.x, r.at(-1)[1] - s.pos.z) < 80) s.pos.set(r.at(-1)[0], 0, r.at(-1)[1]);
+      else { const n = M.g.map.nearestRoad(s.pos.x, s.pos.z, 80, q => q.type !== 'service'); if (n) s.pos.set(n.px, 0, n.pz); }
+    },
     update(M, s, run) {
       const t = run.vars[s.var || 'target'], P = M.g.player;
       if (!t || !t.alive) return 'The target was killed';
@@ -286,7 +291,7 @@ export const STEPS = {
       }
       if (P.vehicle !== t.carried) { t.inVehicle = false; t.h.visible = true; t.pos.copy(t.carried.pos).x += 2; return; }
       t.pos.copy(P.vehicle.pos); M.setDest(s.pos, 8); M.objective(s.text);
-      if (dist2(P.vehicle.pos, s.pos) < 9 && P.vehicle.speed < 2) { t.remove = true; return true; }
+      if (dist2(P.vehicle.pos, s.pos) < (s.radius || 14) && P.vehicle.speed < 2) { t.remove = true; return true; }
     },
   },
   /** Menu choice stored in run.vars[var] (approach, crew members...). */

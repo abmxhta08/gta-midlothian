@@ -32,6 +32,7 @@ async function scene(w, h, query, setup, name, { allowDark = false } = {}) {
 
 for (const [w, h] of SIZES) {
   test(`title screen ${w}x${h}`, () => scene(w, h, '', null, 'title', { allowDark: true }));
+  test(`mission start ${w}x${h}`, () => scene(w, h, '&title=0', () => { const T = window.__test, g = window.__game; T.start(); g.player.setPos(g.missions.sites.quill.x + 3, g.missions.sites.quill.z); T.startMission('homecoming', true); }, 'mission'));
   test(`spawn ${w}x${h}`, () => scene(w, h, '&title=0', () => window.__test.start(), 'spawn'));
   test(`rain ${w}x${h}`, () => scene(w, h, '&title=0&weather=rain', () => { window.__test.start(); window.__game.weather.set('rain', true); window.__game.weather.k = { ...window.__game.weather.target }; }, 'rain'));
   test(`fog ${w}x${h}`, () => scene(w, h, '&title=0', () => { window.__test.start(); const g = window.__game; g.weather.set('fog', true); g.weather.k = { ...g.weather.target }; }, 'fog'));

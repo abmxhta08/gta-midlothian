@@ -26,6 +26,7 @@ import { WeaponWheel } from './ui/weaponwheel.js';
 import { Title } from './ui/title.js';
 import { clamp, shortestAngle, cumLen } from './util.js';
 import { installErrorHandling, report } from './ui/errors.js';
+import { RenderHealth, logEvent } from './core/health.js';
 import { Perf, DebugPanel } from './ui/debug.js';
 import { installTestHooks } from './testhooks.js';
 import { zones } from './config/zones.js';
@@ -50,7 +51,7 @@ const step = async (s) => {
   await new Promise(r => setTimeout(r, 0));
 };
 const SENS = 0.0022;
-const BUILD = 'p2-2026-11-16';
+const BUILD = 'p5-bh1-2026-11-16';   // bh = black-screen hunt: render health monitor, F4 report, post-processing leak fix
 document.getElementById('ver').textContent = `build ${BUILD}`;
 const CARJACK_LINES = ['Hey! That\'s my car!', 'Take it, take it!', 'You\'ll regret this!', 'Not again...', 'I just washed that!'];
 
@@ -108,8 +109,14 @@ class Game {
     for (const [kind, type] of [['safehouse', 'bicycle'], ['gas', 'motorcycle']]) {
       const p = this.places.get(kind); if (!p) continue;
       const n = this.map.nearestRoad(p.pos.x, p.pos.z, 60, r => r.type !== 'service' || kind === 'gas');
-      const v = n ? this.spawnVehicle(type, p.pos.x + (n.px - p.pos.x) * 0.5 + 2, p.pos.z + (n.pz - p.pos.z) * 0.5, Math.atan2(n.dx, n.dz)) : null;
-      if (v) v.persistent = true;
+      if (!n) continue;
+      // first spot near the place that isn't taken by a parked car, another vehicle or a wall
+      const bx = p.pos.x + (n.px - p.pos.x) * 0.5, bz = p.pos.z + (n.pz - p.pos.z) * 0.5, free = (x, z) => this.world.clear(x, z, 1) &&
+        !this.world.parked.some(pc => pc.active && Math.hypot(pc.x - x, pc.z - z) < 4.5) && !this.vehicles.some(o => Math.hypot(o.pos.x - x, o.pos.z - z) < 4.5);
+      let spot = null;
+      for (let k = 0; k < 24 && !spot; k++) { const along = ((k >> 1) + 1) * 2.5 * (k % 2 ? -1 : 1) * (k < 12 ? 1 : 0), side = k < 12 ? 2 : (k - 12) * 0.6 - 3; const x = bx + n.dx * along - n.dz * side, z = bz + n.dz * along + n.dx * side; if (free(x, z)) spot = [x, z]; }
+      const v = this.spawnVehicle(type, ...(spot || [bx + 2, bz]), Math.atan2(n.dx, n.dz));
+      v.persistent = true;
     }
     // shared headlight beams that follow whatever the player drives (constant light count = no shader recompiles)
     this.heads = [0, 1].map(() => { const l = new THREE.SpotLight(0xfff1d6, 0, 75, 0.48, 0.55, 1.1); this.scene.add(l, l.target); return l; });
@@ -124,10 +131,16 @@ class Game {
     this.debug = new DebugPanel(this);
     addEventListener('keydown', (e) => { if (e.code === 'F3') { e.preventDefault(); this.debug.toggle(); } });
     this.title = new Title(this); this.padnav = new PadNav(this);
-    addEventListener('resize', () => { this.camera.aspect = innerWidth / innerHeight; this.camera.updateProjectionMatrix(); this.post.resize(); });
+    // resize / fullscreen / pixel-ratio changes: debounced, never applies a 0 size, resizes render targets in place
+    const queueSize = () => { clearTimeout(this._sizeT); this._sizeT = setTimeout(() => this.applySize(), 120); };
+    addEventListener('resize', queueSize); document.addEventListener('fullscreenchange', queueSize);
+    const watchDpr = () => { const mq = matchMedia(`(resolution: ${devicePixelRatio}dppx)`); mq.addEventListener?.('change', () => { queueSize(); watchDpr(); }, { once: true }); };
+    try { watchDpr(); } catch (e) { /* matchMedia not available */ }
+    this.health = new RenderHealth(this);
     events.on('settings', () => { this.audio.setVolume(settings.volume); });
     $('loading').style.display = 'none';
     this.ready = true; this.frames = 0;
+    if (params.has('resume')) this.applyRecovery(RenderHealth.readRecovery());
     $('loadbar').firstElementChild.style.width = '100%';
     console.log('Midlothian build', BUILD, `ready: ${this.data.buildings.length} buildings, ${this.world.treeCount} trees, ${this.world.parked.length} parked cars, ${this.world.tris | 0} tris`);
   }
@@ -138,10 +151,44 @@ class Game {
     try { this.audio.init(); this.audio.setVolume(settings.volume); } catch (e) { report(e, 'audio init'); }
     try { this.input.lock(); } catch (e) { /* lock denied: drag-to-look still works */ }
   }
-  pause(on) { this.paused = on; $('overlay').style.display = on ? 'flex' : 'none'; if (on) writeSave(this); }
+  pause(on) { logEvent(on ? 'pause' : 'resume-play'); this.paused = on; $('overlay').style.display = on ? 'flex' : 'none'; if (on) writeSave(this); }
   persist() { writeSave(this); }
+  /** After a graphics reset reload (?resume=1): put the player back where they were. */
+  applyRecovery(r) {
+    if (!r) return;
+    try {
+      this.hour = r.hour ?? this.hour; this.sky.setTime(this.hour); if (r.weather) this.weather.set(r.weather, true);
+      this.spawnPlayer(false, { x: r.x, z: r.z }); this.cam.yaw = r.yaw ?? this.cam.yaw;
+      if (r.vehicle) { const v = this.spawnVehicle(r.vehicle.type, r.x, r.z, r.vehicle.heading, r.vehicle.color); this.player.setPos(v.pos.x + 1.5, v.pos.z); this.tryEnterExit(); }
+      if (r.wanted) this.police.setWanted(Math.min(r.wanted, 2));
+      logEvent('resumed', { reason: r.reason, x: Math.round(r.x), z: Math.round(r.z), vehicle: r.vehicle?.type || null });
+      this.hud.toast(`Recovered from a graphics reset${r.mission ? ` (mission cancelled)` : ''}`);
+    } catch (e) { report(e, 'resume'); }
+  }
+  /** Apply the current window size to camera + renderer + post targets (ignores a 0 / minimised size). */
+  applySize() {
+    if (!(innerWidth > 8 && innerHeight > 8)) return;
+    this.camera.aspect = innerWidth / innerHeight; this.camera.updateProjectionMatrix(); this.post.resize();
+  }
+  /** Black-screen recovery: put the camera right behind the player with sane lens and state. */
+  resetCameraSafe() {
+    const P = this.player, v = P.vehicle, c = this.cam, cam = this.camera;
+    c.recoil = 0; c.pitch = 0.2; c.di = 0; c.lookT = 0; c.yaw = Number.isFinite(v ? v.heading : P.yaw) ? (v ? v.heading : P.yaw) : 0;
+    cam.fov = 65; cam.aspect = innerWidth > 8 && innerHeight > 8 ? innerWidth / innerHeight : 16 / 9; cam.near = 0.25; cam.far = 2500; cam.up.set(0, 1, 0); cam.updateProjectionMatrix();
+    const f = v ? v.pos : P.pos; const fx = Number.isFinite(f.x) ? f.x : 0, fz = Number.isFinite(f.z) ? f.z : 0;
+    cam.position.set(fx - Math.sin(c.yaw) * 5, 3, fz - Math.cos(c.yaw) * 5); cam.lookAt(fx, 1.5, fz); cam.updateMatrixWorld(true);
+    logEvent('camera-reset');
+  }
+  /** Black-screen recovery: exposure, fog and sun back to their defaults for the current time of day. */
+  resetLighting() {
+    this.renderer.toneMappingExposure = 0.62;
+    const f = this.scene.fog; if (f) { f.near = 260; f.far = 1900; }
+    if (!Number.isFinite(this.hour)) this.hour = 15.5;
+    this.sky.refreshEnvironment?.(); this.sky.setTime(this.hour);
+    logEvent('lighting-reset');
+  }
   addMoney(n) { this.player.money = Math.max(0, this.player.money + n); events.emit('money', { delta: n, total: this.player.money }); }
-  skipHours(h) { this.hour = (this.hour + h) % 24; this.sky.setTime(this.hour); this.hud.toast(`${Math.floor(this.hour)}:00`); }
+  skipHours(h) { logEvent('time-skip', h); this.hour = (this.hour + h) % 24; this.sky.setTime(this.hour); this.hud.toast(`${Math.floor(this.hour)}:00`); }
   openMap() { this.fullmap.toggle(true); document.exitPointerLock?.(); if (this.state === 'play') this.state = 'map'; }
   brand(name, kind) { return kind === 'building' ? brandName(name) : name; }
 
@@ -177,7 +224,7 @@ class Game {
       if (v.bike && imp > 9) { const vx = v.vx, vz = v.vz; this.exitVehicle(true); P.damage(imp * 1.5); P.knock(vx * 0.7, vz * 0.7, 4); this.hud.toast('You were thrown off!'); }
     }
   }
-  explosion(p, src) { this.combat.explosion(p, src); if (src === this.player.vehicle) this.crime('explosion', p); }
+  explosion(p, src) { logEvent('explosion', [Math.round(p.x), Math.round(p.z), Math.round(p.distanceTo(this.camera.position))]); this.combat.explosion(p, src); if (src === this.player.vehicle) this.crime('explosion', p); }
   recoil(r) { this.cam.recoil += r; }
   setRouteTo(x, z, mission) {
     const f = this.focus, r = this.map.route(f.x, f.z, x, z);
@@ -296,7 +343,7 @@ class Game {
   // ---------- camera ----------
   updateCamera(dt) {
     const P = this.player, c = this.cam, cam = this.camera, inp = this.input;
-    if (inp.pressed('camera')) c.di = (c.di + 1) % 3;
+    if (inp.pressed('camera')) { c.di = (c.di + 1) % 3; logEvent('camera-mode', c.di); }
     c.recoil *= Math.exp(-9 * dt);
     const sens = SENS * settings.sensitivity, mdx = inp.mdx * sens, mdy = inp.mdy * sens * (settings.invertY ? -1 : 1);
     let target, dist, fov = 65, shoulder = 0;
@@ -373,6 +420,7 @@ class Game {
     this.audio.radio.update(!!P.vehicle && !P.vehicle.bike && !P.vehicle.dead, settings.musicVolume);
     for (const v of this.vehicles) if (v !== P.vehicle && !v.ai && !v.cop) v.update(dt, { throttle: 0, steer: 0, brake: true });
     for (let i = this.vehicles.length - 1; i >= 0; i--) { const v = this.vehicles[i]; if (!v.ai && !v.cop && !v.owned && !v.mission && !v.persistent && v !== P.vehicle && v !== this.myCar && v.pos.distanceTo(P.pos) > 380) this.removeVehicle(v); }
+    this.health.check('player-vehicle');
     this.focus.copy(P.vehicle ? P.vehicle.pos : P.pos);
     this.traffic.update(dt);
     this.police.update(dt);
@@ -387,7 +435,9 @@ class Game {
     this.ambient.update(dt);
     this.missions.update(dt);
     this.effects.update(dt);
+    this.health.check('world-systems', true);
     this.updateCamera(rawDt);
+    this.health.check('camera');
     this.audio.listener = this.focus; this.audio.ambient(this.sky.night);
     // GPS refresh
     if (this.route && this.routeTarget && (this.routeT -= dt) <= 0) {
@@ -401,6 +451,7 @@ class Game {
     this.updateHeadlights();
     this.sky.update(this.focus, this.camera, dt);
     this.world.updateLOD(this.camera.position);
+    this.health.check('sky-lighting');
     if ((this.autosaveT = (this.autosaveT || 0) + rawDt) > 120 && this.state === 'play' && !this.police.wanted) { this.autosaveT = 0; writeSave(this); }
     this.hud.update(rawDt);
     this.debug.update(rawDt);
@@ -450,9 +501,24 @@ class Game {
   frame(now, dt, doUpdate) {
     this.frames++;
     this.renderer.info.reset();
-    try { if (doUpdate) { if (this.botLive) this.botLive.tick(dt); else this.update(dt); } } catch (e) { report(e, 'update'); }
+    // update and render are guarded separately: a bug in a system must never skip the render, and nothing may escape
+    try { if (doUpdate) for (let k = this.stepsPerFrame || 1; k > 0; k--) { if (this.botLive) this.botLive.tick(dt); else this.update(dt); } } catch (e) { report(e, 'update'); }
     try { this.input.endFrame(); if (!this.fullmap.open) this.post.render(); } catch (e) { report(e, 'render'); }
-    this.perf.frame(now, this.renderer.info.render);
+    try { this.health.afterRender(now); this.perf.frame(now, this.renderer.info.render); } catch (e) { report(e, 'frame-end'); }
+  }
+  /** (Re)start the animation loop. Every callback is fully guarded: three.js stops rescheduling frames after a throw. */
+  startLoop() {
+    let last = performance.now();
+    this.renderer.setAnimationLoop(null);
+    this.renderer.setAnimationLoop((now) => {
+      try {
+        // dt is clamped on both sides: a huge value (tab was hidden) or 0 / negative (two callbacks with the same timestamp)
+        // would otherwise throw objects away or divide by zero (traffic computes velocity as distance / dt)
+        let dt = (now - last) / 1000; last = now;
+        dt = Number.isFinite(dt) ? Math.min(0.05, Math.max(0.001, dt)) : 1 / 60;
+        this.frame(now, dt, (!this.paused || params.has('nopause')) && !this.testFrozen);
+      } catch (e) { try { report(e, 'loop'); } catch (e2) { /* never throw out of the loop */ } }
+    });
   }
 }
 
@@ -489,11 +555,7 @@ if (params.has('steps')) {
     if (!game.fullmap.open) game.post.render();
   });
 } else {
-  let last = performance.now();
-  game.renderer.setAnimationLoop((now) => {
-    const dt = Math.min(0.05, (now - last) / 1000); last = now;
-    game.frame(now, dt, (!game.paused || params.has('nopause')) && !game.testFrozen);
-  });
+  game.startLoop();
   if (params.get('title') === '0' || params.has('clicktest')) { game.title.hide(); $('overlay').style.display = 'flex'; }
   else game.title.show();
   // Space / Enter / click on the start overlay starts the game

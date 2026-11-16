@@ -22,18 +22,26 @@ export async function startServer() {
 export function stopServer() { server?.kill(); }
 export const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
+// GPU=swiftshader runs Chromium on the software renderer (a different code path from the Metal GPU) for comparison runs.
+const CHROME_ARGS = process.env.GPU === 'swiftshader'
+  ? ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist']
+  : ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'];
 export const BROWSERS = {
-  chromium: () => chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] }),
+  chromium: () => chromium.launch({ channel: 'chrome', headless: true, args: CHROME_ARGS }),
   firefox: () => firefox.launch({ headless: true, firefoxUserPrefs: { 'webgl.force-enabled': true } }),
   webkit: () => webkit.launch({ headless: true }),
 };
 
 /** Open the game, collecting console errors, page errors, failed requests and 404s. */
-export async function openGame(browser, query = '', { denyLock = false, viewport = { width: 1280, height: 720 } } = {}) {
-  const ctx = await browser.newContext({ viewport });
+export async function openGame(browser, query = '', { denyLock = false, viewport = { width: 1280, height: 720 }, deviceScaleFactor = 1 } = {}) {
+  const ctx = await browser.newContext({ viewport, deviceScaleFactor });
   const page = await ctx.newPage();
-  const problems = [];
-  page.on('console', (m) => { if (m.type() === 'error' && !/GPU stall|GL Driver|WebGL: INVALID|texImage/.test(m.text())) problems.push('console.error: ' + m.text()); });
+  const problems = [], glNoise = [];   // glNoise: WebGL driver messages the suites tolerate by default; the soak test counts them
+  page.glNoise = glNoise;
+  page.on('console', (m) => {
+    if (m.type() !== 'error') return;
+    if (/GPU stall|GL Driver|WebGL: INVALID|texImage/.test(m.text())) glNoise.push(m.text()); else problems.push('console.error: ' + m.text());
+  });
   page.on('pageerror', (e) => problems.push('pageerror: ' + e.message));
   page.on('requestfailed', (r) => { if (!/fonts\.g/.test(r.url())) problems.push('requestfailed: ' + r.url() + ' ' + (r.failure()?.errorText || '')); });
   page.on('response', (r) => { if (r.status() >= 400) problems.push(`HTTP ${r.status()}: ${r.url()}`); });

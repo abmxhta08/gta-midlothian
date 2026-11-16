@@ -23,7 +23,10 @@ export class TestBot {
     }
     if (!run || g.state !== 'play' || M.failMenu) return;
     const s = run.steps[run.i]; if (!s) return;
-    if (this.P.vehicle && this.P.vehicle.burn > 0) { if (this.P.vehicle.speed > 3) return this.brake(); g.input.simPressed.add('KeyF'); return; }   // bail out before it blows
+    if (this.P.vehicle && this.P.vehicle.burn > 0) { this.burning = this.P.vehicle; if (this.P.vehicle.speed > 3) return this.brake(); g.input.simPressed.add('KeyF'); return; }   // bail out before it blows
+    if (!this.P.vehicle && this.burning && !this.burning.dead && this.burning.burn > 0 && this.burning.pos.distanceTo(this.P.pos) < 14) {   // and get clear of it
+      const b = this.burning, a = this.P.pos, d = Math.max(0.1, a.distanceTo(b.pos)); this.walkTo(new V3(a.x + (a.x - b.pos.x) / d * 20, 0, a.z + (a.z - b.pos.z) / d * 20), 0.5); g.input.sim.add('ShiftLeft'); return;
+    }
     const key = run.def.id + ':' + run.i + ':' + run.t.toFixed(0).length;
     if (this.stepObj !== s) { this.stepObj = s; this.prog = { d: 1e9, t: 0 }; this.route = null; this.escape = null; this.fleeStart = null; this.chaseT = 0; this.thrown = false; this.hist = []; this.td = null; this.waitT = 0; this.sneakT = 0; }
     void key;
@@ -197,6 +200,8 @@ export class TestBot {
     const g = this.g, P = this.P;
     if (P.vehicle) { if (this.dist(t.pos) > 25) return this.driveTo(t.pos, 20, 12); if (P.vehicle.speed > 2) return this.brake(); g.input.simPressed.add('KeyF'); return; }
     const d = this.dist(t.pos);
+    // armed and fighting back: shoot it down (mission targets are non-lethal, they surrender at 0 HP)
+    if (t.hostile && d < 40 && this.fight(40)) return;
     if (d < 9 && d > 3) { if (!P.inv.stun) P.give('stun', 3); P.equip('stun'); this.face(t.pos); g.cam.pitch = 0.05; g.input.simFire = !this.thrown; this.thrown = true; return; }
     this.thrown = false; this.walkTo(t.pos, 1);
     if (d > 60 && !P.vehicle) this.getVehicle();

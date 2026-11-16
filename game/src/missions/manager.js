@@ -145,7 +145,8 @@ export class MissionManager {
   flee(driver) { const v = driver.v, to = this.randomLoc(v.pos, 600, 1300, false, true); driver.routeTo(to.x, to.z); }
   dispose(e) {
     const g = this.g;
-    if (e instanceof Vehicle) { if (e !== g.player.vehicle) { e.mission = false; if (g.player.lastVehicle !== e) g.removeVehicle(e); } }
+    // always release mission vehicles (a car you're still sitting in becomes an ordinary car that can despawn later)
+    if (e instanceof Vehicle) { e.mission = false; if (e.driver === 'npc') e.driver = null; if (e !== g.player.vehicle && g.player.lastVehicle !== e) g.removeVehicle(e); }
     else if (e instanceof Ped) { e.keep = false; e.remove = true; }
     else if (e.mesh) g.scene.remove(e.mesh);
   }

@@ -20,6 +20,7 @@ export class SettingsUI {
       row('Master volume', slider('volume', 0, 1, 0.05)) + row('Radio volume', slider('musicVolume', 0, 1, 0.05)) +
       row('Mouse sensitivity', slider('sensitivity', 0.2, 3, 0.1)) + row('Invert mouse Y', toggle('invertY')) +
       row('Graphics quality', QUALITY.map((q, i) => `<button class="opt${this.g.post.level === i ? ' on' : ''}" data-q="${i}">${q}</button>`).join('')) +
+      row('Bloom glow', toggle('fxBloom')) + row('Ambient occlusion (Ultra)', toggle('fxAO')) +
       row('Reduced violence', toggle('reducedViolence')) +
       row('Business names', ['real', 'parody'].map(m => `<button class="opt${s.brandMode === m ? ' on' : ''}" data-b="${m}">${m === 'real' ? 'Real' : 'Parody'}</button>`).join('') + '<small> (applies on reload)</small>') +
       row('Traffic & people', slider('density', 0.25, 1.5, 0.25)) +
@@ -28,7 +29,7 @@ export class SettingsUI {
       `</div></div><div class="sfoot"><button data-reset>Reset to defaults</button><button data-close class="primary">Done</button></div>`;
     this.el.style.display = 'block';
     for (const i of this.el.querySelectorAll('input[type=range]')) i.oninput = () => { s[i.dataset.k] = +i.value; i.nextElementSibling.textContent = (+i.value).toFixed(+i.step < 1 ? 2 : 0); saveSettings(); this.apply(); };
-    for (const b of this.el.querySelectorAll('[data-t]')) b.onclick = () => { s[b.dataset.t] = !s[b.dataset.t]; saveSettings(); this.render(); };
+    for (const b of this.el.querySelectorAll('[data-t]')) b.onclick = () => { s[b.dataset.t] = !s[b.dataset.t]; saveSettings(); if (b.dataset.t === 'fxBloom' || b.dataset.t === 'fxAO') this.g.post.rebuild(); this.render(); };
     for (const b of this.el.querySelectorAll('[data-q]')) b.onclick = () => { s.quality = +b.dataset.q; this.g.post.set(s.quality); saveSettings(); this.render(); };
     for (const b of this.el.querySelectorAll('[data-b]')) b.onclick = () => { s.brandMode = b.dataset.b; saveSettings(); this.render(); };
     for (const b of this.el.querySelectorAll('[data-bind]')) b.onclick = () => { this.waitBind = b.dataset.bind; this.render(); };

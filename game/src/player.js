@@ -1,3 +1,4 @@
+import { logEvent } from './core/health.js';
 import * as THREE from 'three';
 import { Human } from './entities/human.js';
 import { WEAPONS, ORDER, weaponMesh } from './weapons.js';
@@ -28,7 +29,7 @@ export class Player {
   get weapon() { return WEAPONS[this.current]; }
   get dead() { return this.health <= 0; }
   get canUseWeapons() { return !this.inSafe && !this.swimming && !this.ragdoll && !this.vault; }
-  setPos(x, z) { this.pos.set(x, 0, z); this.vel.set(0, 0, 0); this.y = 0; this.vy = 0; this.cover = null; this.vault = null; this.ragdoll = 0; this.h.dead = 0; this.sync(); }
+  setPos(x, z) { if (Math.hypot(x - this.pos.x, z - this.pos.z) > 40) logEvent('teleport', [Math.round(x), Math.round(z)]); this.pos.set(x, 0, z); this.vel.set(0, 0, 0); this.y = 0; this.vy = 0; this.cover = null; this.vault = null; this.ragdoll = 0; this.h.dead = 0; this.sync(); }
   sync() { this.h.root.position.set(this.pos.x, this.y + (this.swimming ? -1.05 : 0), this.pos.z); this.h.root.rotation.y = this.yaw; }
   equip(id) {
     if (!this.inv[id]) return false;

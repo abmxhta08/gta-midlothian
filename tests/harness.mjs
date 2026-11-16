@@ -1,9 +1,9 @@
 // Shared page harness for gameplay suites: one loaded game per suite, reset between tests.
 import { BROWSERS, openGame, waitReady } from './lib.mjs';
 
-export async function gamePage(query = '') {
+export async function gamePage(query = '', opts = {}) {
   const browser = await BROWSERS[process.env.BROWSER || 'chromium']();
-  const { page, problems } = await openGame(browser, `?test=1&title=0&newgame=1${query}`);
+  const { page, problems, ctx } = await openGame(browser, `?test=1&title=0&newgame=1${query}`, opts);
   await waitReady(page);
   await page.evaluate(() => window.__test.start());
   const G = (fn, arg) => page.evaluate(fn, arg);
@@ -22,5 +22,5 @@ export async function gamePage(query = '') {
     return true;
   });
   const run = (n, opts = {}) => T('run', n, opts);
-  return { browser, page, problems, G, T, reset, run };
+  return { browser, ctx, page, problems, glNoise: page.glNoise, G, T, reset, run };
 }

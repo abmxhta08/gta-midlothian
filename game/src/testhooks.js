@@ -62,6 +62,27 @@ export function installTestHooks(game) {
     freeze(on = true) { g.testFrozen = on; return on; },
     /** Create the mission-playing test bot (loaded on demand). */
     async bot() { const { TestBot } = await import('./testbot.js'); api._bot = new TestBot(g); return true; },
+    // ---- render-health hooks (black-screen hunt) ----
+    health() { return g.health.status(); },
+    healthReport(reason = 'test') { return g.health.buildReport(reason); },
+    /** Fake a black screen after the real render; `until` = the recovery step name that cures it ('never' = nothing does). */
+    forceBlack(until = 'never') { g.health.testBlack = until; return true; },
+    clearBlack() { g.health.testBlack = null; return true; },
+    /** Corrupt state like a real bug would, to prove the NaN guards and repairs. */
+    poison(kind) {
+      const P = g.player;
+      if (kind === 'recoil') g.cam.recoil = NaN; else if (kind === 'fov') g.camera.fov = NaN; else if (kind === 'pitch') g.cam.pitch = NaN;
+      else if (kind === 'camera-pos') g.camera.position.set(NaN, 5, 5); else if (kind === 'exposure') g.renderer.toneMappingExposure = NaN;
+      else if (kind === 'fog') g.scene.fog.far = NaN; else if (kind === 'player') P.pos.x = Infinity;
+      else if (kind === 'vehicle') { if (P.vehicle) { P.vehicle.vx = NaN; P.vehicle.pos.x = NaN; } }
+      else if (kind === 'sun') g.sky.sun.intensity = NaN; else return false;
+      return true;
+    },
+    loseContext() { const e = g.renderer.getContext().getExtension('WEBGL_lose_context'); if (!e) return false; e.loseContext(); return true; },
+    restoreContext() { const e = g.renderer.getContext().getExtension('WEBGL_lose_context'); if (!e) return false; e.restoreContext(); return true; },
+    /** Run n game updates per rendered frame (time-compressed soak runs; rendering and detectors still run each frame). */
+    fastForward(n = 1) { g.stepsPerFrame = Math.max(1, n | 0); return g.stepsPerFrame; },
+    explodeNearCamera(d = 8) { const c = g.camera.position, f = new THREE.Vector3(); g.camera.getWorldDirection(f); g.explosion(new THREE.Vector3(c.x + f.x * d, 0.5, c.z + f.z * d), null); return true; },
     /** Put the player on a mission's marker (in a car if the job needs one) and start it. */
     placeAndStart(id) {
       const M = g.missions, P = g.player, m = M.markers.find(m => m.def.id === id), def = M.getDef(id);

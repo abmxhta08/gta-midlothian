@@ -110,7 +110,8 @@ export class Traffic {
     const t = this.place(v), k = 1 - Math.exp(-9 * dt), ox = v.pos.x, oz = v.pos.z;
     v.pos.x += (t.tx - v.pos.x) * k; v.pos.z += (t.tz - v.pos.z) * k;
     v.heading += shortestAngle(t.th - v.heading) * (1 - Math.exp(-7 * dt));
-    v.vx = (v.pos.x - ox) / dt; v.vz = (v.pos.z - oz) / dt;
+    // velocity from displacement; guard dt (0 would give NaN velocities that then leak into collisions and the camera)
+    const idt = dt > 1e-4 ? 1 / dt : 0; v.vx = (v.pos.x - ox) * idt; v.vz = (v.pos.z - oz) * idt;
     v.braking = acc < 0 && a.v > 0.5;
     v.update(dt, null);
   }

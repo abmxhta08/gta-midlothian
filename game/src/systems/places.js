@@ -25,8 +25,16 @@ export class Places {
     const d = game.data, poi = (kinds) => d.pois.filter(p => kinds.includes(p.kind)).sort((a, b) => Math.hypot(...a.p) - Math.hypot(...b.p));
     const foot = game.world.footprints;
     const unnamedCommercial = foot.filter(f => f.kind === 'commercial' && !f.name && Math.abs(signedArea(f.pts)) > 350 && !game.zones.nearSafeZone(...centroid(f.pts), 60));
+    // marker spot: nearest sidewalk, else the nearest open ground next to a road (never inside the building,
+    // which is where respawns and drop-offs happen)
+    const open = (x, z) => game.world.clear(x, z, 0.8) && !game.map.inWater?.(x, z);
     const at = (kind, name, x, z) => {
-      const sp = game.peds.nearestSidewalk(x, z, 80) || { x, z };
+      let sp = game.peds.nearestSidewalk(x, z, 80);
+      if (!sp || !open(sp.x, sp.z)) {
+        sp = null;
+        for (const needRoad of [true, false]) { for (let r = 3; r <= 120 && !sp; r += 3) for (let k = 0; k < 16; k++) { const a = k / 16 * Math.PI * 2, px = x + Math.sin(a) * r, pz = z + Math.cos(a) * r; if (open(px, pz) && (!needRoad || game.map.nearestRoad(px, pz, 25, q => q.type !== 'service'))) { sp = { x: px, z: pz }; break; } } if (sp) break; }
+      }
+      sp = sp || { x, z };
       this.add(kind, name, sp.x, sp.z);
     };
     const c = poi(['clothes'])[0]; if (c) at('clothes', c.name, ...c.p);

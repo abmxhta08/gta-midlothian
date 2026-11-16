@@ -59,11 +59,11 @@ Browser game (vanilla ES modules + Three.js CDN, no build step, single-player). 
 - [x] Layout checks at 1280x720 and 1920x1080 (tests/ui.test.mjs, 23 checks incl. minimap blips)
 
 ## Phase 5: testing and bug fixing
-- [ ] Test hooks behind `?test=1`
-- [ ] Test suite A–D (see tests/README.md)
-- [ ] Bot playthrough with perf sampling
-- [ ] Screenshot review
-- [ ] Fix loop + TEST_REPORT.md
+- [x] Test hooks behind `?test=1` (`window.__game`, `window.__test`)
+- [x] Test suite A–D (see tests/README.md): 12 suites, `npm test`
+- [x] Bot playthrough with perf sampling (tests/bot.test.mjs)
+- [x] Screenshot review (tests/artifacts/screens)
+- [x] Fix loop + TEST_REPORT.md
 
 ## Stretch (not planned for this pass)
 - Character switching between multiple protagonists

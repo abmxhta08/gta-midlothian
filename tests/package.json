@@ -1,16 +1,15 @@
 {
   "name": "tests",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Playwright test suite for GTA Midlothian (game stays a static site; this folder is test-only)",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node run-all.mjs",
+    "test:quick": "SUITES=boot,phase1,gameplay,vehicles,wanted,missions,save,ui node run-all.mjs",
+    "bot": "node bot.test.mjs"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "type": "commonjs",
   "devDependencies": {
     "playwright": "^1.49.1"
-  }
+  },
+  "private": true
 }

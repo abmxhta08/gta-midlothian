@@ -15,6 +15,7 @@ export const BIND_LABELS = {
 export const DEFAULTS = {
   volume: 0.8, musicVolume: 0.6, sensitivity: 1, invertY: false, quality: 1, reducedViolence: true,
   brandMode: BRAND_MODE_DEFAULT, density: 1, binds: { ...DEFAULT_BINDS },
+  fxBloom: true, fxAO: true,   // post-processing effects can be switched off individually (graphics-driver workarounds)
 };
 
 export const settings = load();

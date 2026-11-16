@@ -61,7 +61,7 @@ export function createSky(scene, renderer, T) {
     sun.color.copy(SUN_LOW).lerp(SUN_NOON, smooth(0.04, 0.45, s));
     hemi.intensity = 0.62 + 0.1 * day; moon.intensity = 1.25 * (1 - day);
     hemi.color.setHex(0x4e64a0).lerp(new THREE.Color(0xcfe3ff), day);
-    hemi.groundColor.setHex(0x1d2218).lerp(new THREE.Color(0x5a6448), day);
+    hemi.groundColor.setHex(0x353b47).lerp(new THREE.Color(0x5a6448), day);   // night: street-light bounce so characters aren't pure silhouettes
     const sunset = 1 - clamp(Math.abs(s) / 0.28, 0, 1);
     scene.fog.color.copy(FOG_NIGHT).lerp(FOG_DAY, day).lerp(FOG_DUSK, sunset * 0.65 * (0.3 + day));
     stars.visible = L.night > 0.6; stars.material.color.setScalar(clamp((L.night - 0.6) * 2.5, 0, 1));
@@ -90,6 +90,7 @@ export function createSky(scene, renderer, T) {
     scene.fog.color.copy(L.baseFog).lerp(GREY.clone().multiplyScalar(0.25 + 0.75 * L.day), oc * 0.75);
     U.turbidity.value = L.baseTurb + 14 * oc; stars.visible = L.baseStars && oc < 0.4;
   };
+  L.refreshEnvironment = () => { L.envDay = -9; };   // force the reflection map to be regenerated (after a GPU context restore)
   L.setTime(L.hour);
   return L;
 }
