@@ -82,8 +82,13 @@ export class RenderHealth {
     this.persistRecovery('context-lost');
     banner('Graphics context lost (the browser took the GPU away — memory pressure or too many WebGL tabs). Recovering…', 60000);
     this.autoReport('context-lost');
-    setTimeout(() => { if (this.ctx.lost) { try { this.g.renderer.forceContextRestore?.(); } catch (err) { /* not ours to restore */ } } }, 1500);
-    setTimeout(() => { if (this.ctx.lost) banner('Still no graphics. Press F5 to reload: your progress and position were saved.', 600000); }, 8000);
+    // Chrome restores a context lost to a GPU hiccup on its own, but never one it killed because the page had too many WebGL
+    // contexts / too much memory. So do not wait forever: if nothing came back, reload and resume where the player was.
+    setTimeout(() => {
+      if (!this.ctx.lost) return;
+      banner('The browser did not give the GPU back. Reloading the game at your position…', 15000);
+      if (!this.reloadWithResume('context lost and not restored')) banner('Still no graphics. Press F5 to reload: your progress and position were saved.', 600000);
+    }, this.restoreWaitMs ?? 4000);
   }
   onRestored() {
     this.ctx.lost = false; this.ctx.restoredCount++;
@@ -142,7 +147,7 @@ export class RenderHealth {
     const cm = g.cam; if (!fin(cm.yaw + cm.pitch + cm.recoil)) bad.push('cam.yaw/pitch/recoil non-finite');
     const P = g.player; v3('player.pos', P.pos); if (!fin(P.y)) bad.push('player.y non-finite');
     const v = P.vehicle; if (v) { v3('vehicle.pos', v.pos); if (!fin(v.vx + v.vz + v.heading + v.y)) bad.push('vehicle velocity/heading/y non-finite'); }
-    if (deep) for (const o of g.vehicles) { if (o !== v) { v3('vehicle[' + o.type + '].pos', o.pos); if (!fin(o.vx + o.vz + o.heading)) bad.push('vehicle[' + o.type + '] velocity non-finite'); } }
+    if (deep) for (const o of g.vehicles) { if (o !== v) { const tag = o.type + (o.ai ? '@' + o.ai.edge.road.type : o.cop ? '@cop' : ''); v3('vehicle[' + tag + '].pos', o.pos); if (!fin(o.vx + o.vz + o.heading)) bad.push('vehicle[' + tag + '] velocity non-finite'); } }
     const s = g.sky; if (s) { v3('sky.dir', s.dir); if (!fin(s.sun.intensity)) bad.push('sun.intensity=' + s.sun.intensity); }
     const ex = g.renderer.toneMappingExposure; if (!fin(ex) || ex < 0.02) bad.push('exposure=' + ex);
     const f = g.scene.fog; if (f) { if (!fin(f.near + f.far) || f.far <= f.near) bad.push(`fog near/far=${f.near}/${f.far}`); if (!fin(f.color.r + f.color.g + f.color.b)) bad.push('fog.color non-finite'); }
@@ -155,11 +160,11 @@ export class RenderHealth {
     this.phase = name;
     const bad = this.scan(deep);
     if (!bad.length) { this.lastGood = name; if (name === 'camera') this.rememberPos(); return true; }
-    const key = bad[0], first = !this.nan.keys.has(key);
+    const key = bad[0].replace(/\[[^\]]*\]/g, '[]'), first = !this.nan.keys.has(key);
     this.nan.count++; this.nan.keys.set(key, (this.nan.keys.get(key) || 0) + 1);
-    if (first) {
-      const msg = `bad value: ${bad.join('; ')} (first seen after "${name}", last clean checkpoint "${this.lastGood}")`;
-      logEvent('nan-guard', msg); report(new Error(msg), 'health');
+    if (first) {   // one short banner per kind of problem; the full list goes to the event log / F4 report
+      logEvent('nan-guard', `${bad.join('; ').slice(0, 700)} | after "${name}", last clean "${this.lastGood}"`);
+      report(new Error(`bad value (${bad.length}): ${bad[0]}${bad.length > 1 ? ` +${bad.length - 1} more` : ''}; first seen after "${name}", last clean "${this.lastGood}"`), 'health');
     }
     this.repair(bad);
     return false;

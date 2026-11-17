@@ -31,6 +31,8 @@ export class SegGrid {
   /** Accumulated push-out for a circle. Returned object is shared. */
   push(x, z, r, accumulate = true) {
     const o = this.out; o.x = 0; o.z = 0; o.hit = false;
+    // a non-finite / absurd coordinate would make the cell loops below run forever (Infinity <= Infinity never ends): treat as no hit
+    if (!(Math.abs(x) < 1e6 && Math.abs(z) < 1e6 && r < 1e4)) return o;
     const st = ++this.stamp, c = this.cell, S = this.S, seen = this.seen, off = this.off;
     for (let i = Math.floor((x - r) / c); i <= Math.floor((x + r) / c); i++) for (let j = Math.floor((z - r) / c); j <= Math.floor((z + r) / c); j++) {
       const l = this.cells.get(this.key(i, j)); if (!l) continue;
@@ -53,8 +55,9 @@ export class SegGrid {
   near(x, z, r) { return this.push(x, z, r, false).hit; }
   /** First intersection distance of 2D ray (ox,oz)+(dx,dz)*t within maxT, or Infinity. */
   ray(ox, oz, dx, dz, maxT) {
+    if (!(Math.abs(ox) < 1e6 && Math.abs(oz) < 1e6 && Math.abs(dx) <= 1.5 && Math.abs(dz) <= 1.5)) return Infinity;   // NaN / Infinity inputs
     const c = this.cell, S = this.S, st = ++this.stamp, seen = this.seen, off = this.off; let best = Infinity;
-    const steps = Math.ceil(maxT / (c * 0.5));
+    const steps = Math.ceil(Math.min(maxT, 5000) / (c * 0.5));   // a huge or infinite maxT must not loop forever
     for (let s = 0; s <= steps; s++) {
       const x = ox + dx * (s * c * 0.5), z = oz + dz * (s * c * 0.5);
       const l = this.cells.get(this.key(Math.floor(x / c), Math.floor(z / c))); if (!l) continue;

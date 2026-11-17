@@ -1,3 +1,4 @@
+import { logEvent } from '../core/health.js';
 import * as THREE from 'three';
 import { carParts, MATS, CAR_TYPES, dynamicCar, MISC_MAT, paint } from './carmodels.js';
 import { VEHICLES } from '../data/vehicles.js';
@@ -147,6 +148,11 @@ export class Vehicle {
     if (this.game.world.bounds(this.pos)) { this.vx *= 0.5; this.vz *= 0.5; }
     if (impact > 3) { this.onImpact(impact, hitN); if (impact > 20 && side > 0.7) this.flip(); }
     this.braking = (c.throttle < 0 && vF > 0.5) || c.handbrake || (c.brake && Math.abs(vF) > 0.3);
+    // self-heal: a non-finite number must never survive a frame (it would spread through collisions and blank the camera)
+    if (!Number.isFinite(this.pos.x + this.pos.z + this.vx + this.vz + this.heading + this.y + this.vy + this.yawRate + this.steer)) {
+      this.nanResets = (this.nanResets || 0) + 1; logEvent('vehicle-nan-reset', this.type);
+      this.pos.x = this.okX ?? 0; this.pos.z = this.okZ ?? 0; this.heading = this.okH ?? 0; this.vx = this.vz = this.vy = this.yawRate = this.steer = 0; this.y = 0; vF = 0; a = 0;
+    } else { this.okX = this.pos.x; this.okZ = this.pos.z; this.okH = this.heading; }
     this.animate(dt, vF, a);
   }
   onImpact(imp, n) {

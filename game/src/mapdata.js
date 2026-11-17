@@ -3,7 +3,12 @@ import { cumLen, pip, bbox, along, centroid, signedArea } from './util.js';
 const NO_DRIVE = new Set(['driveway']);
 const TRAFFIC_TYPES = new Set(['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'unclassified', 'residential', 'living_street',
   'motorway_link', 'trunk_link', 'primary_link', 'secondary_link', 'tertiary_link']);
-export const SPEED = { motorway: 29, trunk: 22, primary: 20, secondary: 17, tertiary: 15, unclassified: 12, residential: 11, living_street: 7, service: 6 };
+// Target speeds (m/s) per road type. Every type in TRAFFIC_TYPES needs an entry: a missing one used to give undefined * x = NaN,
+// which turned traffic cars on highway ramps into NaN cars that then spread NaN through collisions to the player's car and camera.
+export const SPEED = { motorway: 29, trunk: 22, primary: 20, secondary: 17, tertiary: 15, unclassified: 12, residential: 11, living_street: 7, service: 6,
+  motorway_link: 18, trunk_link: 16, primary_link: 14, secondary_link: 13, tertiary_link: 12 };
+/** Speed for a road type, never undefined (unknown types get a residential speed). */
+export const speedFor = (type) => SPEED[type] ?? 11;
 const KIND_LABEL = { school: 'School', retail: 'Shopping', commercial: 'Business District', park: 'Park', mall: 'Shopping Center', place_of_worship: 'Church',
   religious: 'Church', golf_course: 'Golf Course', recreation_ground: 'Recreation', sports_centre: 'Sports Center', cemetery: 'Cemetery', hospital: 'Hospital',
   college: 'College', library: 'Library', fire_station: 'Fire Station', police: 'Police', residential: 'Neighborhood', nature_reserve: 'Nature Reserve',

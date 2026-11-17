@@ -312,14 +312,15 @@ class Game {
   vehicleCollisions() {
     const V = this.vehicles, f = this.focus;
     for (let i = 0; i < V.length; i++) {
-      const a = V[i]; if (Math.abs(a.pos.x - f.x) > 150 || Math.abs(a.pos.z - f.z) > 150) continue;
+      // comparisons are written so that NaN fails them (NaN > 150 is false, which used to let NaN cars through)
+      const a = V[i]; if (!(Math.abs(a.pos.x - f.x) <= 150 && Math.abs(a.pos.z - f.z) <= 150) || !Number.isFinite(a.vx + a.vz + a.y)) continue;
       for (let j = i + 1; j < V.length; j++) {
-        const b = V[j]; if (Math.abs(a.pos.x - b.pos.x) > 14 || Math.abs(a.pos.z - b.pos.z) > 14) continue;
-        if (Math.abs(a.y - b.y) > 1.5) continue;
+        const b = V[j]; if (!(Math.abs(a.pos.x - b.pos.x) <= 14 && Math.abs(a.pos.z - b.pos.z) <= 14) || !Number.isFinite(b.vx + b.vz + b.y)) continue;
+        if (!(Math.abs(a.y - b.y) <= 1.5)) continue;
         const ca = a.circles(), cb = b.circles(), ra = a.radius, rb = b.radius;
         for (const [ax, az] of ca) for (const [bx, bz] of cb) {
           let dx = bx - ax, dz = bz - az; const d = Math.hypot(dx, dz), m = ra + rb;
-          if (d >= m || d < 1e-4) continue;
+          if (!(d < m) || d < 1e-4) continue;
           dx /= d; dz /= d;
           const ma = a.mode === 'kinematic' ? 0 : a.h.mass, mb = b.mode === 'kinematic' ? 0 : b.h.mass;
           const ka = ma ? (mb ? mb / (ma + mb) : 1) : 0, kb = mb ? (ma ? ma / (ma + mb) : 1) : 0;
@@ -379,9 +380,13 @@ class Game {
     this.hud.scope(false);
     const pk = c.pitch - c.recoil * 3, dir = new THREE.Vector3(Math.sin(c.yaw) * Math.cos(pk), -Math.sin(pk), Math.cos(c.yaw) * Math.cos(pk));
     const right = new THREE.Vector3(-Math.cos(c.yaw), 0, Math.sin(c.yaw));
+    // over-the-shoulder offset: never push the pivot through a wall beside the player
+    if (shoulder > 0) { const ts = this.world.grid.ray(target.x, target.z, right.x, right.z, shoulder + 0.3); if (ts !== Infinity) shoulder = Math.max(0, ts - 0.3); }
     target.addScaledVector(right, shoulder);
     const hx = -dir.x, hz = -dir.z, hl = Math.hypot(hx, hz);
-    if (hl > 1e-3) { const t = this.world.grid.ray(target.x, target.z, hx / hl, hz / hl, dist * hl + 0.3); if (t !== Infinity) dist = Math.max(0.8, Math.min(dist, t / hl - 0.35)); }
+    // pull the camera in front of any wall behind the player. The old floor of 0.8 m put the camera inside the building
+    // whenever the player stood closer than ~0.5 m to a wall.
+    if (hl > 1e-3) { const t = this.world.grid.ray(target.x, target.z, hx / hl, hz / hl, dist * hl + 0.3); if (t !== Infinity) dist = Math.max(0.12, Math.min(dist, t / hl - 0.3)); }
     cam.fov += (fov - cam.fov) * (1 - Math.exp(-8 * dt)); cam.updateProjectionMatrix();
     cam.position.copy(target).addScaledVector(dir, -dist); cam.position.y = Math.max(cam.position.y, 0.4);
     this.shake *= Math.exp(-4 * dt);

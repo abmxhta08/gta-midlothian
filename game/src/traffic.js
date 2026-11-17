@@ -3,7 +3,8 @@ import { Vehicle } from './entities/vehicle.js';
 import { PAINTS } from './entities/carmodels.js';
 import { VEHICLES, randomTrafficType } from './data/vehicles.js';
 import { along, shortestAngle, clamp } from './util.js';
-import { SPEED } from './mapdata.js';
+import { speedFor } from './mapdata.js';
+import { logEvent } from './core/health.js';
 
 
 /** Kinematic lane-following traffic on the drive graph. */
@@ -37,13 +38,23 @@ export class Traffic {
       if (vis > 0.5 && d < 160) continue;
       if (this.list.some(c => c.ai && c.ai.edge === e && Math.abs(c.ai.s - s) < 14)) continue;
       let type = randomTrafficType(); if (type === 'bus' && e.road.w < 9) type = 'sedan';
-      const v = new Vehicle(this.game, type, VEHICLES[type].color ?? PAINTS[Math.floor(Math.random() * PAINTS.length)]);
-      v.mode = 'kinematic'; v.driver = 'npc';
-      v.ai = { edge: e, s, lane: e.laneOffsets[Math.floor(Math.random() * e.laneOffsets.length)], v: SPEED[e.road.type] * 0.6, aggro: 0.85 + Math.random() * 0.3, wait: 0, stopped: null, panic: 0, crashT: 0, honkT: 0 };
-      this.place(v, true);
-      this.list.push(v); this.game.vehicles.push(v); return v;
+      return this.make(e, s, type);
     }
     return null;
+  }
+  /** Create a traffic car on edge e at distance s along it. */
+  make(e, s, type = 'sedan') {
+    const v = new Vehicle(this.game, type, VEHICLES[type].color ?? PAINTS[Math.floor(Math.random() * PAINTS.length)]);
+    v.mode = 'kinematic'; v.driver = 'npc';
+    v.ai = { edge: e, s, lane: e.laneOffsets[Math.floor(Math.random() * e.laneOffsets.length)], v: speedFor(e.road.type) * 0.6, aggro: 0.85 + Math.random() * 0.3, wait: 0, stopped: null, panic: 0, crashT: 0, honkT: 0 };
+    this.place(v, true);
+    this.list.push(v); this.game.vehicles.push(v); return v;
+  }
+  /** A traffic car whose numbers went bad is removed at once (it would otherwise spread NaN through collisions). */
+  cull(v, why) {
+    const i = this.list.indexOf(v); if (i >= 0) this.list.splice(i, 1);
+    this.nanCulls = (this.nanCulls || 0) + 1; logEvent('traffic-nan-cull', `${v.type}@${v.ai?.edge?.road?.type} ${why}`);
+    this.game.removeVehicle(v);
   }
   place(v, snap = false) {
     const a = v.ai, p = along(a.edge.pts, a.edge.D, a.s);
@@ -79,7 +90,7 @@ export class Traffic {
   }
   drive(v, a, dt) {
     const g = this.game, e = a.edge;
-    let target = SPEED[e.road.type] * a.aggro * (a.panic > 0 ? 1.5 : 1);
+    let target = speedFor(e.road.type) * a.aggro * (a.panic > 0 ? 1.5 : 1);
     a.panic = Math.max(0, a.panic - dt);
     const ld = this.place(v), fx = Math.sin(v.heading), fz = Math.cos(v.heading);
     // curvature ahead
@@ -102,13 +113,16 @@ export class Traffic {
     a.v = clamp(a.v + acc * dt, Math.min(a.v, target), Math.max(a.v, target));
     if (target < a.v) a.v = Math.max(target, a.v - 8 * dt);
     a.s += a.v * dt;
+    if (!Number.isFinite(a.s + a.v)) return this.cull(v, 'agent state non-finite');
     while (a.s > a.edge.len) {
       const next = this.nextEdge(a.edge);
       if (!next) { a.s = a.edge.len; a.v = 0; break; }
       a.s -= a.edge.len; a.edge = next; a.nextHint = null; a.lane = next.laneOffsets[Math.min(next.laneOffsets.length - 1, Math.floor(Math.random() * next.laneOffsets.length))]; a.stopped = null;
     }
     const t = this.place(v), k = 1 - Math.exp(-9 * dt), ox = v.pos.x, oz = v.pos.z;
+    if (!Number.isFinite(t.tx + t.tz + t.th)) return this.cull(v, 'lane target non-finite');
     v.pos.x += (t.tx - v.pos.x) * k; v.pos.z += (t.tz - v.pos.z) * k;
+    if (!Number.isFinite(v.pos.x + v.pos.z)) return this.cull(v, 'position non-finite');
     v.heading += shortestAngle(t.th - v.heading) * (1 - Math.exp(-7 * dt));
     // velocity from displacement; guard dt (0 would give NaN velocities that then leak into collisions and the camera)
     const idt = dt > 1e-4 ? 1 / dt : 0; v.vx = (v.pos.x - ox) * idt; v.vz = (v.pos.z - oz) * idt;

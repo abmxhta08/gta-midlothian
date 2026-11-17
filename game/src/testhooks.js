@@ -78,8 +78,11 @@ export function installTestHooks(game) {
       else if (kind === 'sun') g.sky.sun.intensity = NaN; else return false;
       return true;
     },
-    loseContext() { const e = g.renderer.getContext().getExtension('WEBGL_lose_context'); if (!e) return false; e.loseContext(); return true; },
-    restoreContext() { const e = g.renderer.getContext().getExtension('WEBGL_lose_context'); if (!e) return false; e.restoreContext(); return true; },
+    // (the extension object must be fetched while the context is still alive: getExtension() returns null on a lost context)
+    loseContext() { const e = api._lose = g.renderer.getContext().getExtension('WEBGL_lose_context'); if (!e) return false; e.loseContext(); return true; },
+    restoreContext() { if (!api._lose) return false; try { api._lose.restoreContext(); return true; } catch (err) { return false; } },
+    /** How long the monitor waits for a lost context to come back before reloading (default 4 s). */
+    setRestoreWait(ms) { g.health.restoreWaitMs = ms; return ms; },
     /** Run n game updates per rendered frame (time-compressed soak runs; rendering and detectors still run each frame). */
     fastForward(n = 1) { g.stepsPerFrame = Math.max(1, n | 0); return g.stepsPerFrame; },
     explodeNearCamera(d = 8) { const c = g.camera.position, f = new THREE.Vector3(); g.camera.getWorldDirection(f); g.explosion(new THREE.Vector3(c.x + f.x * d, 0.5, c.z + f.z * d), null); return true; },
