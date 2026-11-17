@@ -24,7 +24,8 @@ async function soakLevel(q) {
   const E = (fn, arg) => page.evaluate(fn, arg), T = (n, ...a) => page.evaluate(([n, a]) => window.__test[n](...a), [n, a]);
   await T('start'); await E((q) => { const g = window.__game; g.post.set(q); g.testFrozen = false; g.paused = false; g.settings.density = 1; }, q);
   await T('bot'); await T('fastForward', FF);
-  const rep = { gpu: GPU, quality: NAMES[q], ff: FF, targetGameMin: MIN, actions: {}, failures: [], blackFrames: 0, nan: 0, contextLoss: null, screenshots: [], series: [], errors: [], glNoiseCount: 0, glNoiseSamples: [] };
+  const sceneGeo = await E(() => { const u = new Set(); window.__game.scene.traverse(o => { if (o.geometry) u.add(o.geometry.uuid); }); return u.size; });   // everything that can ever be on the GPU at once, except entities
+  const rep = { gpu: GPU, quality: NAMES[q], ff: FF, targetGameMin: MIN, actions: {}, failures: [], blackFrames: 0, nan: 0, sceneGeo, contextLoss: null, screenshots: [], series: [], errors: [], glNoiseCount: 0, glNoiseSamples: [] };
   const t0 = Date.now(); let gameSec0 = await E(() => window.__game.time), actions = 0, ctxDone = false;
   const status = () => E(() => { const g = window.__game, i = g.renderer.info, f = g.perf.frames.slice(-120), m = performance.memory; return { t: g.time, black: g.health.black.events, recovered: g.health.black.recovered, nan: g.health.nan.count, nanKinds: [...g.health.nan.keys.keys()], bad: g.health.scan(true), tex: i.memory.textures, geo: i.memory.geometries, prog: i.programs.length, heap: m ? Math.round(m.usedJSHeapSize / 1048576) : null, peds: g.peds.list.length, veh: g.vehicles.length, ft: f, ready: g.ready, ctxLost: g.health.ctx.lost, frames: g.frames, lights: 0, quality: g.post.level }; });
   const shot = async (why) => { const n = `${DIR}/q${q}-${why}-${Date.now()}.png`; try { await page.screenshot({ path: n }); rep.screenshots.push(n); } catch (e) { /* page may be reloading */ } };
@@ -66,6 +67,7 @@ async function soakLevel(q) {
   let nextCtx = 0.1 + rng() * 0.15;   // forced context loss once, early (10-25% of the run) so the last two thirds are steady state after the reload
   while ((prev.t - gameSec0) / 60 < MIN) {
     let name = pick(bag); actions++;
+    if (name === 'qualityCycle' && (prev.t - gameSec0) / 60 > MIN * 0.25) name = 'teleport';   // switching quality compiles that level's shaders once: do it early so the rest of the run is steady state
     if (!ctxDone && (prev.t - gameSec0) / 60 > MIN * nextCtx) { name = 'contextLoss'; ctxDone = true; }
     rep.actions[name] = (rep.actions[name] || 0) + 1;
     try {
@@ -105,11 +107,14 @@ async function soakLevel(q) {
   // the size of the world, not a leak) and each pedestrian owns a bone texture. So compare steady-state samples: the sample at 60% of the
   // run against the last one, with entity-dependent counts normalised (textures - peds).
   const S = rep.series, warm = S[Math.floor(S.length * 0.6)] || S[0], last = S.at(-1);
-  rep.trend = { textures: [warm.tex, last.tex, Math.max(...rep.series.map(s => s.tex))], geometries: [warm.geo, last.geo, Math.max(...rep.series.map(s => s.geo))], programs: [warm.prog, last.prog, Math.max(...rep.series.map(s => s.prog))], heapMB: [warm.heap, last.heap, Math.max(...rep.series.map(s => s.heap || 0))], peds: [warm.peds, last.peds], vehicles: [warm.veh, last.veh] };
-  if (MIN >= 8 && rep.thirds.texMinusPedsMax[2] - rep.thirds.texMinusPedsMax[1] > 30) rep.failures.push(`texture growth (minus peds) ${rep.thirds.texMinusPedsMax.join(' -> ')}`);
-  const third = (k) => S.slice(Math.floor(S.length * k / 3), Math.floor(S.length * (k + 1) / 3)), mx = (a, f) => Math.max(...a.map(f));
+  const third = (k) => S.slice(Math.floor(S.length * k / 3), Math.floor(S.length * (k + 1) / 3)), mx = (a, f) => Math.max(...a.map(f), 0);
   rep.thirds = { geoMax: [0, 1, 2].map(k => mx(third(k), x => x.geo)), texMinusPedsMax: [0, 1, 2].map(k => mx(third(k), x => x.tex - x.peds)) };
-  if (MIN >= 8 && rep.thirds.geoMax[2] - rep.thirds.geoMax[1] > 60) rep.failures.push(`geometry growth between the middle and last third: ${rep.thirds.geoMax.join(' -> ')}`);
+  rep.trend = { textures: [warm.tex, last.tex, Math.max(...S.map(s => s.tex))], geometries: [warm.geo, last.geo, Math.max(...S.map(s => s.geo))], programs: [warm.prog, last.prog, Math.max(...S.map(s => s.prog))], heapMB: [warm.heap, last.heap, Math.max(...S.map(s => s.heap || 0))], peds: [warm.peds, last.peds], vehicles: [warm.veh, last.veh] };
+  fs.writeFileSync(`${DIR}/soak-q${q}.json`, JSON.stringify(rep, null, 2));   // raw data first: a failing check must never lose a run
+  if (MIN >= 8 && rep.thirds.texMinusPedsMax[2] - rep.thirds.texMinusPedsMax[1] > 30) rep.failures.push(`texture growth (minus peds) ${rep.thirds.texMinusPedsMax.join(' -> ')}`);
+  // geometry on the GPU is bounded by the world (every chunk visited) + a few hundred for entities and effects; unbounded growth is a leak
+  const geoBound = sceneGeo + 600; rep.geoBound = geoBound;
+  if (Math.max(...S.map(x => x.geo)) > geoBound) rep.failures.push(`GPU geometries ${Math.max(...S.map(x => x.geo))} exceeded the world bound ${geoBound}`);
   // programs: the first samples precede the first composer frames, and the quality-cycle action adds the Low/High/Ultra variants once (~25), so
   // bound the total and require the steady-state part of the run (last 40%) to be flat: a climb there means shaders are recompiling during play
   if (last.prog - S[Math.min(3, S.length - 1)].prog > 30) rep.failures.push(`shader programs climbed ${S[Math.min(3, S.length - 1)].prog} -> ${last.prog}`);

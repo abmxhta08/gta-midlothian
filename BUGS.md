@@ -1,0 +1,50 @@
+# BUGS.md: the random black screen hunt
+
+Symptom: the 3D view goes black at a random moment; the DOM HUD (speedometer, money, minimap frame) and the pause menu keep working.
+Reported on a Mac, Chrome, fullscreen, many tabs, Retina display, build `p2-2026-11-16`.
+
+**Verdict.** I found and fixed a real, confirmed chain that produces exactly this symptom (NaN cars spreading to the player's car and camera), plus
+a second independent route to the same symptom (an unhandled WebGL context loss), plus a GPU-memory leak that makes the second more likely.
+I could **not** make the black screen happen in headless Chrome, so the *cause on your machine* is not proven. What is proven: the game's own new
+safety check caught the first chain firing in your live play (two screenshots, banner `bad value: vehicle[...] pos non-finite`), and the
+instrumentation is now in place so the next occurrence produces a file I can read. See "If it happens again" at the bottom.
+
+## Bugs found, root cause, fix, proof
+
+| # | Sev | Bug | Root cause | Fix | Test that proves it |
+|---|---|---|---|---|---|
+| 1 | **P0** | **NaN cars spread to the player's car and camera** | `SPEED` (traffic target speed per road type) had no entry for `motorway_link`, `trunk_link`, `secondary_link`, but traffic is allowed on them (16 ramp segments). `undefined * x = NaN`, so a traffic car on a ramp got a NaN speed, then a NaN position. The car-vs-car collision code could not stop it from spreading: its range checks were written as `Math.abs(dx) > 14 -> skip`, and `NaN > 14` is `false`, so NaN cars were never skipped, and `pen = m - NaN` pushed NaN into every car they touched. Your own car NaN means the camera (which follows it) NaN, and a NaN camera draws nothing while the HTML HUD keeps running. | Ramp speeds + `speedFor()` that can never return undefined; traffic culls a car whose numbers go bad; collision checks written so NaN fails them; `Vehicle.update` self-heals non-finite state; frame-level guard as a last line (this is the banner you saw). | `health`: *speed table covers every road type*, *traffic over every ramp stays finite and moves*, *one NaN car in a crowd cannot spread*, *vehicle heals itself*. Mutation-checked: with the old code the first two fail (all 16 ramp segments give NaN cars) and the third fails (`guardFired: 1`). |
+| 2 | **P0** | **WebGL context loss was not handled** | No `webglcontextlost`/`restored` listeners. Chrome kills the oldest WebGL context when a page has too many or when GPU memory is short (many tabs, Retina). Chrome only restores some of them. A lost context leaves a blank canvas forever while the DOM keeps running: the exact symptom. | Listeners; banner; automatic F4-style report; state saved; if not restored in 4 s, or if restored but the world's GPU data is gone, the page reloads itself and puts you back where you were (`?resume=1`). No drawing between restore and reload. | `health`: *context loss: detected, banner + report, restored, scene reloads, player resumes*, *after a recovery reload the scene renders*; `soak` forces one per quality level. |
+| 3 | **P1** | **GPU memory leak on every resize / quality change** | three.js r170 `EffectComposer.dispose()` frees only its own two targets and the copy pass. It does **not** dispose the passes. Bloom owns 11 half-float render targets, AO 6 more. `post.build()` ran on every `resize` event and nothing disposed the passes: 11 (Medium) / 17 (Ultra) leaked textures per event (measured +220 textures over 20 resizes). One fullscreen toggle or window drag is dozens of events. | Every pass is disposed. Resize now resizes targets in place, is debounced (120 ms), ignores a 0 size and unchanged sizes. | `health`: *no GPU texture leak over 25 real resizes + 8 rebuilds* (Medium, Ultra): was +220, now +0..4. |
+| 4 | **P1** | Uncapped pixel ratio / memory on Retina | Pixel ratio capped at a flat 1.25 / 1.5 / 2 with no total budget, 4096 shadow map + MSAA + AO + bloom at DPR 2. | Pixel ratio caps per level (Low 1, Medium 1, High 1.5, Ultra 2) **and** a pixel budget per level (3 M / 3 M / 5.5 M / 8 M); AO resolution scales with window size; shadow map sizes per level. | `health`: 4 *Retina (devicePixelRatio 2)* tests. |
+| 5 | **P1** | The animation loop could die | three.js stops rescheduling frames when the callback throws. `update` and `render` were guarded, but `perf.frame`/`dt` code was not. | Whole callback guarded; loop watchdog restarts a stopped loop and logs it. | `health`: *loop survives exceptions in update, render-end and perf code*, *watchdog restarts a stopped loop*. |
+| 6 | **P1** | `dt` could be 0 or negative | Only an upper clamp (0.05) existed. Two animation callbacks with the same timestamp give dt = 0 and traffic computes velocity as `distance / dt` = 0/0 = NaN. | dt clamped to [0.001, 0.05]; traffic guards the division. | `health`: *traffic with dt = 0 or tiny never produces NaN*. |
+| 7 | **P1** | Infinite loop (tab hang) on a non-finite position | `SegGrid.push()` / `ray()` loop forever on `Infinity` (`Infinity <= Infinity` is true and `i++` does nothing). | Non-finite or absurd inputs return "no hit"; `ray` length is capped. | `health`: *collision grid never hangs on NaN / Infinity / absurd inputs*; the suite aborts with `HANG:` instead of hanging. |
+| 8 | P2 | Camera ended up inside buildings (0.4% of wall-hugging positions) | Wall ray result floored at 0.8 m, so standing within ~0.5 m of a wall pushed the camera through it; the shoulder offset could place the pivot inside the wall. | Floor 0.12 m; shoulder offset is ray-limited. | `health`: *camera never inside a building* (1,500 random wall-hugging positions; 0 found in 4,576 after the fix). |
+| 9 | P2 | Shader programs compiled on first use | 45 programs compiled lazily: 18 when the police helicopter / SWAT van first appear, 6 for the first explosion, rain, ped types. Each compile can stall a frame by 50-500 ms on Mac (ANGLE/Metal), and long driver stalls are a known trigger of context loss. | `prewarm()` during loading: one of every vehicle model, a cop, all hidden effect objects, the helicopter and rain are compiled against the real render target. | `health`: *shaders are pre-compiled* (first use of everything adds 0 programs, was +45), *prewarm leaves no trace*. |
+| 10 | P2 | Mission item markers and race gates leaked geometry + material | `scene.remove()` without `dispose()`. | Disposed. | `health`: *dispose audit* (63/63 leaked without the fix, 0 with it). |
+| 11 | P2 | Starter car spawned on top of the always-parked bicycle | Spawn order: bicycle placed first, starter car placed afterwards without looking. | Starter car picks the first free spot along the kerb. | `world`: *always-parked bicycle and motorcycle do not overlap* (fresh game). |
+| 12 | P3 | Test-only: ambient street race started during vehicle tests and its countdown braked the car (taxi "speed 1.7") | Random event after 40 s of game time. | Harness silences ambient events. | `vehicles` 23/23. |
+
+## Hypothesis checklist
+
+| Hypothesis | Result | Evidence |
+|---|---|---|
+| Render/post targets resized to 0 or stale on fullscreen / Esc / resize / DPR change | **Confirmed** (defect), real 0-size untestable | Rebuilt on every event, no guard, leaked (#3, #4). Zero-size and unchanged-size are now ignored and tested by faking `innerWidth = 0`. DPR changes are watched with `matchMedia`. |
+| GPU memory pressure on Retina (4096 shadows + MSAA + AO + bloom at DPR 2) | **Confirmed as a contributor** | Leak (#3) + no budget (#4). Caps added and tested at DPR 2. |
+| Camera inside geometry | **Confirmed, minor** | #8. Not a black-screen cause by itself (back faces are culled: you see out, not black). Camera/frame also verified across 11 vehicle types, explode/exit, death and respawn. |
+| Day/night/weather transitions give zero/NaN exposure, sun or fog | **Disproved** | Every hour (24) x clear/rain/fog x Medium/Ultra (144 frames): values finite, never black, bright by day (luminance 100-190 by day, ~50-60 at night). |
+| Too many dynamic lights | **Disproved** | Light count is constant (8) through a 5-star chase, explosions and night driving; ≤ 8 active. |
+| Shader compile/link error on first use of a rare material | **Not triggered; related defect fixed** | No shader error on Metal or SwiftShader across every vehicle/effect/weather. Lazy compilation itself was a hazard: #9. |
+| Disposing shared geometry/materials/textures that are still used | **Disproved** for vehicles/peds (5 spawn/remove cycles: counts identical every cycle), **found a leak** in mission markers (#10) | probe + `health` dispose audit. |
+| InstancedMesh count 0 / stale bounding spheres / NaN matrices | **Disproved** | `health`: every instanced and static mesh scanned. |
+| Frustum/distance culling hides the world after teleport / respawn / chunk crossing | **Disproved** | 9 teleports incl. map edges and corners, respawn at hospital and police station: world visible, not black. |
+| Huge delta time after the tab was hidden | **Disproved for huge, confirmed for zero** | Upper clamp already existed; lower bound missing (#6). A 2.5 s main-thread stall is part of the soak. |
+| An exception in a system update skips the render | **Partly**: update/render were separate, but the loop callback itself could still throw | #5. |
+| Post effects (AO, bloom) giving black on some GPU/driver | **Untestable here**, mitigations in | Per-effect switches (Settings + `?bloom=0 ?ao=0 ?post=0`), automatic fallback to direct rendering if the composer throws, and the recovery ladder lowers quality. |
+| Audio / input / pointer-lock handlers throwing during fullscreen changes | **Disproved by reading** | Handlers are short and guarded; none can stop rendering. Real fullscreen cannot be exercised headless (the soak tries it). |
+| (extra) `powerPreference: 'high-performance'` on dual-GPU Macs (GPU switching) | **Untestable here** | Left unchanged; the GPU name is in every F4 report so I can see whether it matters. |
+
+## Soak results
+
+(filled in below by the soak run)

@@ -28,8 +28,13 @@ The game exposes `window.__game` and `window.__test` only with `?test=1`.
 | `save` | save/load round trip through a reload, v1 -> v2 migration, corrupt save, story unlocks persist |
 | `world` | ped/traffic caps + despawn, nothing inside buildings/water, roads unblocked, road graph connected, collision NaN grid, bot driving tour |
 | `ui` | layout at 1280x720 and 1920x1080, title Continue/New Game confirm, settings persist, menus, map waypoint, gamepad |
+| `health` | black-screen regression suite (47 checks): post-processing leak, resize/Retina caps, NaN guards, NaN-traffic bug, dt/loop/watchdog, black-frame detector + recovery ladder, context loss + resume, F4 report, event ring, resource watch, 24h x weather sweep, culling/camera/instancing sanity, shader prewarm, dispose audit |
+| `soak` | randomized play, 20 game-minutes per quality level, time-compressed; fails on any black frame, error, NaN, leak or unrecovered context loss. `GPU=swiftshader` for the software-GL comparison |
 | `perf` | FPS on Medium, draw calls and triangles |
 | `bot` | TestBot plays every mission (teleports/assists logged as bugs) + live 10-minute tour with FPS, 1% low, heap, entity counts per quality |
 | `screens` | screenshots at key moments + black-frame check (`SIZES=1280x720,1920x1080`) |
 
 `BOT_MINUTES=2 node bot.test.mjs` shortens the live run; `BOT_IDS=homecoming,repo` limits the missions.
+
+Soak: `SOAK_MINUTES=20 SOAK_QUALITIES=1,0,2,3 SOAK_FF=6 SOAK_SEED=1 node soak.test.mjs` (reports in `artifacts/soak-metal/` or `soak-swiftshader/`; a screenshot is saved on any black frame).
+`ONLY="regex"` filters checks by name in every suite. A page that stops answering (infinite loop in game code) aborts `health` with a `HANG:` message instead of hanging the run.
