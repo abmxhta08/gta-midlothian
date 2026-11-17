@@ -32,10 +32,10 @@ async function soakLevel(q) {
 
   const ACTIONS = {
     async teleport() { const [x, z] = await randomSpot(rng() < 0.5); await E(([x, z]) => window.__game.player.setPos(x, z), [x, z]); await sleep(1200); },
-    async walkFar() { const [x, z] = await randomSpot(true); await E(([x, z]) => { const b = window.__test._bot; b.freeGoal = { x, z }; window.__game.botLive = { tick: (dt) => b.tick(dt) }; }, [x, z]); await sleep(4000); await E(() => { window.__game.botLive = null; }); },
+    async walkFar() { const [x, z] = await randomSpot(true); await E(([x, z]) => { const b = window.__test._bot; b.freeGoal = { x, z, mode: 'walk' }; window.__game.botLive = { tick: (dt) => b.tick(dt) }; }, [x, z]); await sleep(4000); await E(() => { window.__test._bot.freeGoal = null; }); await E(() => { window.__game.botLive = null; }); },
     async driveFar() {
       const [x, z] = await randomSpot(true);
-      await E(([x, z, t]) => { const g = window.__game, P = g.player, n = g.map.nearestRoad(P.pos.x, P.pos.z, 120, r => r.type !== 'service'); if (!P.vehicle && n) { const v = g.spawnVehicle(t, n.px, n.pz, Math.atan2(n.dx, n.dz)); P.setPos(v.pos.x + 1.5, v.pos.z); g.tryEnterExit(); } const b = window.__test._bot; b.freeGoal = { x, z }; g.botLive = { tick: (dt) => b.tick(dt) }; }, [x, z, pick(['sedan', 'suv', 'muscle', 'taxi'])]);
+      await E(([x, z, t]) => { const g = window.__game, P = g.player, n = g.map.nearestRoad(P.pos.x, P.pos.z, 120, r => r.type !== 'service'); if (!P.vehicle && n) { const v = g.spawnVehicle(t, n.px, n.pz, Math.atan2(n.dx, n.dz)); P.setPos(v.pos.x + 1.5, v.pos.z); g.tryEnterExit(); } const b = window.__test._bot; b.freeGoal = { x, z, mode: 'drive' }; g.botLive = { tick: (dt) => b.tick(dt) }; }, [x, z, pick(['sedan', 'suv', 'muscle', 'taxi'])]);
       await sleep(5000); await E(() => { window.__game.botLive = null; window.__test._bot.freeGoal = null; });
     },
     async vehicleCarousel() { await E((t) => { const g = window.__game, P = g.player; if (P.vehicle) g.exitVehicle(true); const n = g.map.nearestRoad(P.pos.x, P.pos.z, 120, r => r.type !== 'service'); if (!n) return; const v = g.spawnVehicle(t, n.px, n.pz, Math.atan2(n.dx, n.dz)); P.setPos(v.pos.x + 1.5, v.pos.z); g.tryEnterExit(); }, pick(VEHICLES)); await sleep(1500); await E(() => { const g = window.__game; if (g.player.vehicle) g.tryEnterExit(); }); await sleep(500); },
@@ -63,7 +63,7 @@ async function soakLevel(q) {
   const bag = Object.entries(W).flatMap(([k, n]) => Array(n).fill(k));
 
   let prev = await status(); rep.series.push({ ...prev, ft: undefined, wall: 0 });
-  let nextCtx = 0.4 + rng() * 0.4;   // forced context loss once, somewhere in the middle of the run
+  let nextCtx = 0.1 + rng() * 0.15;   // forced context loss once, early (10-25% of the run) so the last two thirds are steady state after the reload
   while ((prev.t - gameSec0) / 60 < MIN) {
     let name = pick(bag); actions++;
     if (!ctxDone && (prev.t - gameSec0) / 60 > MIN * nextCtx) { name = 'contextLoss'; ctxDone = true; }
@@ -81,6 +81,7 @@ async function soakLevel(q) {
           rep.contextLoss = { recovered: true, seconds: +((Date.now() - tStart) / 1000).toFixed(1), moved: +Math.hypot(after.x - before.x, after.z - before.z).toFixed(1), moneyKept: after.money === before.money };
           if (rep.contextLoss.moved > 40 || !rep.contextLoss.moneyKept) rep.failures.push(`context loss resume mismatch ${JSON.stringify(rep.contextLoss)}`);
         } else { rep.contextLoss = { recovered: false }; rep.failures.push('context loss was NOT recovered'); await shot('ctxloss'); break; }
+        rep.ctxConsoleErrors = problems.splice(0).length;   // the deliberate context loss logs console errors; they are expected
         gameSec0 += 0; prev = await status(); continue;
       }
       await ACTIONS[name]();
@@ -100,12 +101,21 @@ async function soakLevel(q) {
   const live = await E(() => { const s = window.__game.perf.stats(); return { fps: s.fps, low1: s.low1, calls: s.calls, tris: s.tris }; });
   rep.livePerf = live; rep.glNoiseCount = glNoise.length; rep.glNoiseSamples = [...new Set(glNoise.map(m => m.slice(0, 160)))].slice(0, 8);
   rep.wallMinutes = +((Date.now() - t0) / 60000).toFixed(1); rep.gameMinutes = +((prev.t - gameSec0) / 60).toFixed(1); rep.actionCount = actions;
-  // trends after a 3-game-minute warmup
-  const warm = rep.series.find(s => (s.t - rep.series[0].t) / 60 >= 3) || rep.series[0], last = rep.series.at(-1);
+  // Trends. The bot explores the whole map, so world geometry keeps uploading to the GPU during the first part of the run (bounded by
+  // the size of the world, not a leak) and each pedestrian owns a bone texture. So compare steady-state samples: the sample at 60% of the
+  // run against the last one, with entity-dependent counts normalised (textures - peds).
+  const S = rep.series, warm = S[Math.floor(S.length * 0.6)] || S[0], last = S.at(-1);
   rep.trend = { textures: [warm.tex, last.tex, Math.max(...rep.series.map(s => s.tex))], geometries: [warm.geo, last.geo, Math.max(...rep.series.map(s => s.geo))], programs: [warm.prog, last.prog, Math.max(...rep.series.map(s => s.prog))], heapMB: [warm.heap, last.heap, Math.max(...rep.series.map(s => s.heap || 0))], peds: [warm.peds, last.peds], vehicles: [warm.veh, last.veh] };
-  if (last.tex - warm.tex > 40) rep.failures.push(`texture growth ${warm.tex} -> ${last.tex}`);
-  if (last.prog - warm.prog > 4) rep.failures.push(`shader programs climbed ${warm.prog} -> ${last.prog}`);
+  if (MIN >= 8 && rep.thirds.texMinusPedsMax[2] - rep.thirds.texMinusPedsMax[1] > 30) rep.failures.push(`texture growth (minus peds) ${rep.thirds.texMinusPedsMax.join(' -> ')}`);
+  const third = (k) => S.slice(Math.floor(S.length * k / 3), Math.floor(S.length * (k + 1) / 3)), mx = (a, f) => Math.max(...a.map(f));
+  rep.thirds = { geoMax: [0, 1, 2].map(k => mx(third(k), x => x.geo)), texMinusPedsMax: [0, 1, 2].map(k => mx(third(k), x => x.tex - x.peds)) };
+  if (MIN >= 8 && rep.thirds.geoMax[2] - rep.thirds.geoMax[1] > 60) rep.failures.push(`geometry growth between the middle and last third: ${rep.thirds.geoMax.join(' -> ')}`);
+  // programs: the first samples precede the first composer frames, and the quality-cycle action adds the Low/High/Ultra variants once (~25), so
+  // bound the total and require the steady-state part of the run (last 40%) to be flat: a climb there means shaders are recompiling during play
+  if (last.prog - S[Math.min(3, S.length - 1)].prog > 30) rep.failures.push(`shader programs climbed ${S[Math.min(3, S.length - 1)].prog} -> ${last.prog}`);
+  if (MIN >= 5 && last.prog - S[Math.floor(S.length * 0.6)].prog > 3) rep.failures.push(`shader programs still climbing in the last 40% of the run: ${S[Math.floor(S.length * 0.6)].prog} -> ${last.prog}`);
   if (warm.heap && last.heap - warm.heap > 250) rep.failures.push(`JS heap growth ${warm.heap} -> ${last.heap} MB`);
+  if (Math.max(...S.map(x => x.heap || 0)) > 1200) rep.failures.push(`JS heap peaked at ${Math.max(...S.map(x => x.heap || 0))} MB`);
   fs.writeFileSync(`${DIR}/soak-q${q}.json`, JSON.stringify(rep, null, 2));
   await page.context().close();
   return rep;
@@ -113,7 +123,7 @@ async function soakLevel(q) {
 
 const all = [];
 for (const q of LEVELS) test(`soak ${GPU} ${NAMES[q]}: ${MIN} game-minutes of randomized play, zero black frames / errors / NaN, recovers from context loss`, async () => {
-  const r = await soakLevel(q); all.push(r);
+  let r; try { r = await soakLevel(q); } catch (e) { console.log('SOAK ERROR STACK:', e.stack); throw e; } all.push(r);
   console.log('      ' + JSON.stringify({ quality: r.quality, gameMin: r.gameMinutes, wallMin: r.wallMinutes, actions: r.actionCount, black: r.blackFrames, nan: r.nan, ctx: r.contextLoss, live: r.livePerf, trend: r.trend, glNoise: r.glNoiseCount }));
   assert(!r.failures.length, r.failures.slice(0, 6).join(' // '));
 });

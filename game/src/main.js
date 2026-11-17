@@ -15,6 +15,7 @@ import { Combat } from './combat.js';
 import { Pickups } from './pickups.js';
 import { MissionManager } from './missions/manager.js';
 import { Vehicle } from './entities/vehicle.js';
+import { VEHICLES } from './data/vehicles.js';
 import { MATS } from './entities/carmodels.js';
 import { HUD } from './ui/hud.js';
 import { FullMap } from './ui/fullmap.js';
@@ -44,7 +45,7 @@ import { Ambient } from './systems/ambient.js';
 
 const params = new URLSearchParams(location.search);
 const $ = (id) => document.getElementById(id);
-const STEPS = ['Downloading map', 'Painting textures', 'Laying ground', 'Paving roads', 'Raising buildings', 'Planting trees', 'Building meshes', 'Lighting the sky', 'Spawning people'];
+const STEPS = ['Downloading map', 'Painting textures', 'Laying ground', 'Paving roads', 'Raising buildings', 'Planting trees', 'Building meshes', 'Lighting the sky', 'Spawning people', 'Compiling shaders'];
 const step = async (s) => {
   $('loadstep').textContent = s;
   const i = STEPS.indexOf(s); if (i >= 0) $('loadbar').firstElementChild.style.width = `${Math.round((i + 1) / (STEPS.length + 1) * 100)}%`;
@@ -138,6 +139,7 @@ class Game {
     try { watchDpr(); } catch (e) { /* matchMedia not available */ }
     this.health = new RenderHealth(this);
     events.on('settings', () => { this.audio.setVolume(settings.volume); });
+    await step('Compiling shaders'); await this.prewarm();
     $('loading').style.display = 'none';
     this.ready = true; this.frames = 0;
     if (params.has('resume')) this.applyRecovery(RenderHealth.readRecovery());
@@ -153,6 +155,25 @@ class Game {
   }
   pause(on) { logEvent(on ? 'pause' : 'resume-play'); this.paused = on; $('overlay').style.display = on ? 'flex' : 'none'; if (on) writeSave(this); }
   persist() { writeSave(this); }
+  /** Compile every shader program the game can need (each vehicle model, police/SWAT, the helicopter, every effect, rain...)
+   *  while the loading screen is up. Compiling on first use stalls the frame for 50-500 ms per program on Mac (ANGLE/Metal) and
+   *  drivers have been seen to drop the GL context after long stalls. Temporary models are created, compiled and thrown away. */
+  async prewarm() {
+    const R = this.renderer, t0 = performance.now(), p0 = R.info.programs?.length || 0, temp = [], hidden = [];
+    try {
+      for (const type of Object.keys(VEHICLES)) { const v = new Vehicle(this, type); v.setPose(30000, 30000, 0); if (!v.group.parent) this.scene.add(v.group); temp.push(v); }
+      const ped = new Ped(this, 30000, 30000, { type: 'cop' }); this.peds.add(ped); temp.push(ped);
+      this.scene.traverse((o) => { if (!o.visible && !o.isLight) { hidden.push(o); o.visible = true; } });   // effect pools, helicopter, rain, LOD-hidden props
+      R.setRenderTarget(this.post.compileTarget());
+      await R.compileAsync(this.scene, this.camera);
+    } catch (e) { report(e, 'prewarm'); }
+    finally {
+      R.setRenderTarget(null); for (const o of hidden) o.visible = false;
+      for (const t of temp) { if (t instanceof Vehicle) t.dispose(); else { t.dispose(); const i = this.peds.list.indexOf(t); if (i >= 0) this.peds.list.splice(i, 1); } }
+    }
+    this.prewarmInfo = { ms: Math.round(performance.now() - t0), programsBefore: p0, programsAfter: R.info.programs?.length || 0 };
+    console.info('[Midlothian] shaders pre-compiled', JSON.stringify(this.prewarmInfo));
+  }
   /** After a graphics reset reload (?resume=1): put the player back where they were. */
   applyRecovery(r) {
     if (!r) return;
@@ -204,7 +225,13 @@ class Game {
       P.yaw = Math.atan2(near.px - sp.x, near.pz - sp.z); this.cam.yaw = P.yaw;
       if (first || !this.vehicles.some(v => v.pos.distanceTo(P.pos) < 30)) {
         const side = ((sp.x - near.px) * -near.dz + (sp.z - near.pz) * near.dx) > 0 ? 1 : -1, off = near.road.w / 2 - 1.3;
-        this.myCar = this.spawnVehicle('sedan', near.px - near.dz * off * side, near.pz + near.dx * off * side, Math.atan2(near.dx * side, near.dz * side), 0x8a1010);
+        // the starter car goes at the first spot along the kerb that isn't on top of another vehicle (the always-parked bicycle)
+        let cx = near.px - near.dz * off * side, cz = near.pz + near.dx * off * side;
+        for (const along of [0, 5.5, -5.5, 11, -11, 16.5, -16.5]) {
+          const x = near.px - near.dz * off * side + near.dx * along, z = near.pz + near.dx * off * side + near.dz * along;
+          if (!this.vehicles.some(o => Math.hypot(o.pos.x - x, o.pos.z - z) < 4.5)) { cx = x; cz = z; break; }
+        }
+        this.myCar = this.spawnVehicle('sedan', cx, cz, Math.atan2(near.dx * side, near.dz * side), 0x8a1010);
       }
     }
     if (first) this.hud.help('Welcome to <b>Midlothian</b>.<br><b>F</b> get in the car · <b>M</b> map · <b>P</b> phone · hold <b>Q</b> weapons. Yellow markers are <b>missions</b>.', 10);
@@ -508,7 +535,7 @@ class Game {
     this.renderer.info.reset();
     // update and render are guarded separately: a bug in a system must never skip the render, and nothing may escape
     try { if (doUpdate) for (let k = this.stepsPerFrame || 1; k > 0; k--) { if (this.botLive) this.botLive.tick(dt); else this.update(dt); } } catch (e) { report(e, 'update'); }
-    try { this.input.endFrame(); if (!this.fullmap.open) this.post.render(); } catch (e) { report(e, 'render'); }
+    try { this.input.endFrame(); if (!this.fullmap.open && !this.health.blockRender) this.post.render(); } catch (e) { report(e, 'render'); }
     try { this.health.afterRender(now); this.perf.frame(now, this.renderer.info.render); } catch (e) { report(e, 'frame-end'); }
   }
   /** (Re)start the animation loop. Every callback is fully guarded: three.js stops rescheduling frames after a throw. */

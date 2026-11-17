@@ -148,7 +148,7 @@ export class MissionManager {
     // always release mission vehicles (a car you're still sitting in becomes an ordinary car that can despawn later)
     if (e instanceof Vehicle) { e.mission = false; if (e.driver === 'npc') e.driver = null; if (e !== g.player.vehicle && g.player.lastVehicle !== e) g.removeVehicle(e); }
     else if (e instanceof Ped) { e.keep = false; e.remove = true; }
-    else if (e.mesh) g.scene.remove(e.mesh);
+    else if (e.mesh) { g.scene.remove(e.mesh); e.mesh.geometry?.dispose(); e.mesh.material?.dispose(); }   // item markers own their geometry + material
   }
 
   // ---------- availability ----------

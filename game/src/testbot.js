@@ -21,6 +21,11 @@ export class TestBot {
     if (g.menu.open) { // mission choices: alternate options so both approaches get exercised across runs
       const i = g.menu.items.findIndex(x => /Retry/.test(x.label)); g.menu.choose(i >= 0 ? i : (this.choices++ % Math.max(1, g.menu.items.length))); return;
     }
+    if (this.freeGoal && g.state === 'play') {   // free roam (soak test): walk or drive to an arbitrary point
+      const f = this.freeGoal, p = new V3(f.x, 0, f.z), P = this.P;
+      if (f.mode === 'walk') { if (P.vehicle) { if (P.vehicle.speed > 2) return this.brake(); g.input.simPressed.add('KeyF'); return; } return this.walkTo(p, 3); }
+      return P.vehicle ? this.driveTo(p, 18, 6) : this.getVehicle();
+    }
     if (!run || g.state !== 'play' || M.failMenu) return;
     const s = run.steps[run.i]; if (!s) return;
     if (this.P.vehicle && this.P.vehicle.burn > 0) { this.burning = this.P.vehicle; if (this.P.vehicle.speed > 3) return this.brake(); g.input.simPressed.add('KeyF'); return; }   // bail out before it blows
@@ -138,7 +143,7 @@ export class TestBot {
     if (sp < speed * slow) inp.sim.add('KeyW'); else if (sp > speed * slow + 4) inp.sim.add('KeyS');
     if (v.flipped) inp.simPressed.add('KeyR');
     // never drive into a pond (it floods the engine): brake, then back out
-    const ahead = 3 + Math.max(0, sp) * 0.6, wx = v.pos.x + Math.sin(v.heading) * ahead, wz = v.pos.z + Math.cos(v.heading) * ahead;
+    const ahead = 2.5 + Math.max(0, sp) * 0.15, wx = v.pos.x + Math.sin(v.heading) * ahead, wz = v.pos.z + Math.cos(v.heading) * ahead;
     if (this.g.map.inWater(wx, wz) || this.g.map.inWater(v.pos.x, v.pos.z)) { inp.sim.delete('KeyW'); inp.sim.add(sp > 1 ? 'Space' : 'KeyS'); this.route = null; return; }
     if (sp < 0.5 && (this.revT = (this.revT || 0) + this.dt) > 2) { inp.sim.delete('KeyW'); inp.sim.add('KeyS'); inp.sim.delete('KeyA'); inp.sim.delete('KeyD'); if (err > 0) inp.sim.add('KeyD'); else inp.sim.add('KeyA'); if (this.revT > 3.2) this.revT = 0; }
     else if (sp > 1) this.revT = 0;

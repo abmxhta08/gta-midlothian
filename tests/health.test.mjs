@@ -379,6 +379,48 @@ test('light count is constant and capped through a 5-star chase, explosions and 
   assert(r.counts.length === 1 && r.maxActive <= 8, JSON.stringify(r));
 });
 
+// ---------------------------------------------------------------- D2. shaders
+test('shaders are pre-compiled: first use of every vehicle, effect, weather, night and the helicopter compiles nothing new (was +45 programs)', async () => {
+  await reset();
+  const r = await G(() => {
+    const g = window.__game, T = window.__test, P = g.player, log = [], progs = () => g.renderer.info.programs.length;
+    const step = (name, fn) => { const a = progs(); fn(); T.run(5); g.post.render(); const d = progs() - a; if (d) log.push(`${name} +${d}`); };
+    g.post.render(); T.setTime(13); T.run(30); g.post.render(); const base = progs();
+    const sp = g.peds.nearestSidewalk(700, -500, 250); P.setPos(sp.x, sp.z);
+    for (const t of ['sedan', 'hatch', 'suv', 'pickup', 'van', 'bus', 'taxi', 'muscle', 'compact', 'motorcycle', 'bicycle', 'police', 'swat']) step('vehicle ' + t, () => { const n = g.map.nearestRoad(P.pos.x, P.pos.z, 80, q => q.type !== 'service'); const v = g.spawnVehicle(t, n.px, n.pz, 0); P.setPos(v.pos.x + 1.5, v.pos.z); g.tryEnterExit(); T.run(5); g.tryEnterExit(); });
+    step('police', () => g.police.setWanted(2)); step('swat + helicopter', () => g.police.setWanted(5)); step('explosion', () => T.explodeNearCamera(8));
+    step('fire/smoke', () => { for (const v of g.vehicles) if (v.pos.distanceTo(P.pos) < 80) v.damage?.(9999); });
+    step('gunfire', () => { P.give('rifle', 90); P.equip('rifle'); g.input.simAim = true; g.input.simFire = true; T.run(6); g.input.simFire = false; g.input.simAim = false; });
+    step('rain', () => { g.weather.set('rain', true); g.weather.k = { ...g.weather.target }; }); step('fog', () => { g.weather.set('fog', true); g.weather.k = { ...g.weather.target }; });
+    step('night', () => { T.setTime(23); g.weather.set('clear', true); }); step('night + helicopter', () => { g.police.setWanted(5); T.run(60); });
+    step('ped types', () => { T.spawnPed(6, { type: 'cop' }); T.spawnPed(8, { type: 'gang' }); });
+    return { base, final: progs(), log, prewarm: g.prewarmInfo };
+  });
+  assert(r.final - r.base <= 1 && r.prewarm.programsAfter > r.prewarm.programsBefore + 10, JSON.stringify(r));
+});
+
+test('prewarm leaves no trace: same scene objects, visibility, peds and vehicles before and after', async () => {
+  const r = await G(async () => {
+    const g = window.__game, count = () => { let n = 0, v = 0; g.scene.traverse(o => { n++; if (o.visible) v++; }); return { objects: n, visible: v, peds: g.peds.list.length, vehicles: g.vehicles.length, geos: g.renderer.info.memory.geometries }; };
+    const a = count(); await g.prewarm(); const b = count(); return { a, b };
+  });
+  assert(r.a.objects === r.b.objects && r.a.visible === r.b.visible && r.a.peds === r.b.peds && r.a.vehicles === r.b.vehicles, JSON.stringify(r));
+});
+
+test('dispose audit: every mission marker / race gate mesh removed from the scene has its geometry and material disposed', async () => {
+  await reset(); await G(() => { window.__game.settings.density = 0; });
+  const r = await G(() => {
+    const g = window.__game, T = window.__test, removed = [], rm0 = g.scene.remove.bind(g.scene);
+    // record every Box/Torus mesh (the item markers and race gates are the only ones using these) that leaves the scene
+    g.scene.remove = (...objs) => { for (const o of objs) o.traverse(m => { if (m.isMesh && /^(BoxGeometry|TorusGeometry)$/.test(m.geometry.type)) { m.geometry.addEventListener('dispose', () => { m.geometry.userData.disposed = true; }); m.material.addEventListener('dispose', () => { m.material.userData.disposed = true; }); removed.push(m); } }); return rm0(...objs); };
+    const ids = ['side_race', 'heist_setup', 'paper', 'side_delivery', 'escort', 'hold'];
+    for (let i = 0; i < 3; i++) for (const id of ids) { T.placeAndStart(id); T.run(15); const M = g.missions; for (let k = 0; k < 4 && M.active; k++) M.advance(); if (M.active) M.abort('audit'); T.run(5); }
+    g.scene.remove = rm0;
+    return { removed: removed.length, geometryLeaks: removed.filter(m => !m.geometry.userData.disposed).length, materialLeaks: removed.filter(m => !m.material.userData.disposed).length };
+  });
+  assert(r.removed >= 10 && r.geometryLeaks === 0 && r.materialLeaks === 0, JSON.stringify(r));
+});
+
 // ---------------------------------------------------------------- E. the NaN-traffic bug seen in live play (ramps -> NaN cars -> NaN spreads to the player's car and camera)
 test('speed table covers every road type in the map (a missing entry gave undefined * x = NaN)', async () => {
   const r = await G(async () => {

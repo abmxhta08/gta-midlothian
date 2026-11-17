@@ -251,7 +251,7 @@ export const STEPS = {
       M.objective(`${s.text} Checkpoint <em>${s.i + 1}/${s.cps.length}</em>${s.ais.length ? ` · Position <em>${place}/${s.ais.length + 1}</em>` : ''}`);
       if (s.ais.length && s.ais.every(a => a.finished) && s.needPlace === 1) { run.vars.place = s.ais.length + 1; return 'You lost the race'; }
     },
-    end(M, s) { for (const gt of s.gates || []) M.g.scene.remove(gt); },
+    end(M, s) { for (const gt of s.gates || []) { M.g.scene.remove(gt); gt.geometry.dispose(); } s.gates?.[0]?.material.dispose(); s.gates = []; },
   },
   /** Knock a target out (fists, bat or stun grenade) without killing them. */
   knockout: {

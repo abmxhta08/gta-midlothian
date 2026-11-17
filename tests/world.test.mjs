@@ -1,7 +1,7 @@
 // World integrity: population caps + despawn, nothing spawns inside buildings or water, roads are not
 // blocked by collision, the road graph is connected, collision queries never return NaN, and the bot can
 // drive a tour of random destinations without getting stuck.
-import { startServer, test, run, assert } from './lib.mjs';
+import { startServer, test, run, assert, openGame, waitReady } from './lib.mjs';
 import { gamePage } from './harness.mjs';
 
 await startServer();
@@ -80,14 +80,16 @@ test('bot drives a tour of 6 random destinations without getting stuck', async (
     if (P.vehicle !== v) return { error: 'could not enter the test car' };
     const out = []; let frames = 0;
     for (let k = 0; k < 6; k++) {
-      const l = g.missions.randomLoc(P.vehicle ? P.vehicle.pos : P.pos, 400, 900, false), goal = new T.THREE.Vector3(l.x, 0, l.z), nn = g.map.nearestRoad(goal.x, goal.z, 80, r => r.type !== 'service'); if (nn) goal.set(nn.px, 0, nn.pz);
+      // goal = a point on a drivable (traffic) road 400-900 m away: the drive graph is one-way in places, so "nearest road to a landmark" isn't always reachable
+      const from = P.vehicle ? P.vehicle.pos : P.pos, cand = g.traffic.edges.filter(e => e.road.type !== 'service' && e.len > 40 && Math.hypot(e.pts[0][0] - from.x, e.pts[0][1] - from.z) > 400 && Math.hypot(e.pts[0][0] - from.x, e.pts[0][1] - from.z) < 900 && Math.hypot(e.pts[0][0], e.pts[0][1]) < g.map.R - 100);
+      const ce = cand[Math.floor(Math.random() * cand.length)], mid = ce.pts[Math.floor(ce.pts.length / 2)], goal = new T.THREE.Vector3(mid[0], 0, mid[1]);
       let f = 0; for (; f < 30 * 150; f++) { const inp = g.input; inp.sim.clear(); b.driveTo(goal, 18, 6); g.update(1 / 30); inp.endFrame(); if (b.dist(goal) < 8) break; }
       frames += f; out.push(Math.round(b.dist(goal)));
     }
     return { left: out, teleports: b.log.teleports.map(t => t.msg), minutes: +(frames / 30 / 60).toFixed(1) };
   });
-  const missed = r.left.filter(d => d > 10).length;
-  assert(missed <= 1 && r.teleports.length <= 2, JSON.stringify(r));
+  const missed = r.left.filter(d => !(d <= 12)).length;
+  assert(missed === 0 && r.teleports.length <= 2, JSON.stringify(r));
 });
 
 test('traffic obeys red lights and stop signs', async () => {
@@ -97,11 +99,12 @@ test('traffic obeys red lights and stop signs', async () => {
     const c = g.world.signals.clusters; let redSeen = 0, redRun = 0, stopEdges = 0, stopRun = 0; const prev = new Map();
     const d0 = TR.drive.bind(TR);
     TR.drive = (v, a, dt) => {
-      const before = { edge: a.edge, stopped: a.stopped, panic: a.panic };
+      if (a._seenEdge !== a.edge) { a._seenEdge = a.edge; a._s0 = a.s; }   // where on this edge we first saw the car
+      const before = { edge: a.edge, stopped: a.stopped, panic: a.panic, s0: a._s0 };
       const f = [Math.sin(v.heading), Math.cos(v.heading)], sig = g.world.signals.ahead(v.pos.x, v.pos.z, f[0], f[1]);
       if (sig && sig.state === 'r' && a.panic <= 0) { if (sig.dist < 12) redSeen++; if (sig.dist > 0.3 && sig.dist < 1.8 && a.v > 4) redRun++; }
       d0(v, a, dt);
-      if (a.edge !== before.edge && before.edge.stopAt !== null && before.panic <= 0) { stopEdges++; if (before.stopped !== before.edge) stopRun++; }
+      if (a.edge !== before.edge && before.edge.stopAt !== null && before.panic <= 0 && before.s0 < before.edge.stopAt - 3) { stopEdges++; if (before.stopped !== before.edge) stopRun++; }   // only cars that started behind the stop line
     };
     const busiest = [...c].sort((a, b) => b.approaches.length - a.approaches.length).slice(0, 6);
     for (const s of busiest) { const sp = g.peds.nearestSidewalk(s.x + 25, s.z + 25, 80) || { x: s.x + 25, z: s.z + 25 }; g.player.setPos(sp.x, sp.z); T.run(1200); }
@@ -157,8 +160,9 @@ test('every road segment: both lanes are drivable (no invisible walls) along the
   assert(r.segs > 500 && r.blocked / r.samples < 0.01, JSON.stringify(r));
 });
 
-test('always-parked bicycle and motorcycle do not overlap other cars or walls', async () => {
-  const bad = await G(() => {
+test('always-parked bicycle and motorcycle do not overlap other cars or walls (checked on a freshly booted game)', async () => {
+  const { page: p, ctx } = await openGame(H.browser, '?test=1&title=0&newgame=1'); await waitReady(p);   // fresh: earlier tests in this file spawn cars near the safehouse
+  const bad = await p.evaluate(() => {
     const g = window.__game, out = [];
     for (const v of g.vehicles.filter(v => v.persistent)) {
       if (!g.world.clear(v.pos.x, v.pos.z, 0.8)) out.push(`${v.type} in a wall`);
@@ -167,6 +171,7 @@ test('always-parked bicycle and motorcycle do not overlap other cars or walls', 
     }
     return out;
   });
+  await ctx.close();
   assert(!bad.length, bad.join('; '));
 });
 

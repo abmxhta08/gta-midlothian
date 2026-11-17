@@ -96,6 +96,8 @@ export function createPost(renderer, scene, camera, sky) {
       logEvent('post-resize', { w, h, pr: +pr.toFixed(2) });
       return true;
     },
+    /** Render target the scene is drawn into (null = the screen): shader programs differ between the two, so pre-compiling must match. */
+    compileTarget() { return composer && !disabled ? composer.renderTarget2 : null; },
     setNight(n) { if (bloom) { bloom.strength = 0.35 + n * 0.55; bloom.threshold = 0.95 - n * 0.2; } },
     /** Switch the whole composer off (direct rendering) or back on. */
     setDisabled(flag, reason = null) { if (disabled === flag) return; disabled = flag; disabledReason = flag ? reason : null; logEvent('post-disabled', { flag, reason }); build(); },

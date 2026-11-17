@@ -86,6 +86,7 @@ export class RenderHealth {
     // contexts / too much memory. So do not wait forever: if nothing came back, reload and resume where the player was.
     setTimeout(() => {
       if (!this.ctx.lost) return;
+      this.blockRender = true;
       banner('The browser did not give the GPU back. Reloading the game at your position…', 15000);
       if (!this.reloadWithResume('context lost and not restored')) banner('Still no graphics. Press F5 to reload: your progress and position were saved.', 600000);
     }, this.restoreWaitMs ?? 4000);
@@ -99,6 +100,7 @@ export class RenderHealth {
     try { g.post.rebuild(); g.sky.refreshEnvironment?.(); g.sky.setTime(g.hour); g.renderer.resetState(); } catch (e) { report(e, 'context-restore'); }
     if (this.staticWorldLost()) {
       // the static world's vertex arrays were freed after upload to save RAM (~160 MB), so they cannot be re-sent
+      this.blockRender = true;   // the world's GPU data is gone: do not draw (every draw would throw) until the reload lands
       banner('Graphics restored. Reloading the scene…', 15000, false);
       this.reloadWithResume('context restored but static world GPU data was released');
     } else banner('Graphics restored.', 4000, false);

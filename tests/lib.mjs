@@ -49,7 +49,7 @@ export async function openGame(browser, query = '', { denyLock = false, viewport
     Element.prototype.requestPointerLock = function () { const e = new Event('pointerlockerror'); setTimeout(() => document.dispatchEvent(e), 0); throw new DOMException('Pointer lock denied (test)', 'NotAllowedError'); };
   });
   await page.goto(BASE + (query ? (query.startsWith('?') ? query : '?' + query) : ''), { waitUntil: 'load' });
-  return { ctx, page, problems };
+  return { ctx, page, problems, glNoise };
 }
 export async function waitReady(page, timeout = 120000) {
   await page.waitForFunction(() => window.__game?.ready === true || !!document.querySelector('#fatal.show'), null, { timeout });

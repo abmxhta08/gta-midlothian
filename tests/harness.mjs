@@ -18,6 +18,7 @@ export async function gamePage(query = '', opts = {}) {
     P.money = 5000; P.inv = { fists: {}, pistol: { ammo: 12, reserve: 48 } }; P.equip('pistol');
     g.spawnPlayer(false); g.weather.set('clear', true); g.settings.density = 0;
     for (const p of g.peds.list) p.dispose(); g.peds.list.length = 0;
+    g.ambient.cool = 1e9; if (g.ambient.active) g.ambient.end?.(false);   // random ambient events (street race countdown brakes your car) would make tests flaky
     g.testFrozen = true;
     return true;
   });
